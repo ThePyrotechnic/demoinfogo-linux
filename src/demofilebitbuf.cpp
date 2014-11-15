@@ -66,7 +66,7 @@ int CBitRead::GetNumBitsRead( void ) const
 	if ( ! m_pData )									   // pesky null ptr bitbufs. these happen.
 		return 0;
 
-	int nCurOfs = ( ( int( m_pDataIn ) - int( m_pData ) ) / 4 ) - 1;
+	int nCurOfs = ( ( size_t( m_pDataIn ) - size_t( m_pData ) ) / 4 ) - 1;
 	nCurOfs *= 32;
 	nCurOfs += ( 32 - m_nBitsAvail );
 	int nAdjust = 8 * ( m_nDataBytes & 3 );
@@ -98,7 +98,7 @@ void CBitRead::GrabNextDWord( bool bOverFlowImmediately )
 		}
 		else
 		{
-			assert( reinterpret_cast< int >( m_pDataIn ) + 3 < reinterpret_cast< int >( m_pBufferEnd ) );
+			assert( reinterpret_cast< size_t >( m_pDataIn ) + 3 < reinterpret_cast< size_t >( m_pBufferEnd ) );
 			m_nInBufWord = *( m_pDataIn++ );
 		}
 }
@@ -387,7 +387,7 @@ void CBitRead::ReadBits( void *pOutData, int nBits )
 
 	
 	// align output to dword boundary
-	while( ( ( unsigned long )pOut & 3 ) != 0 && nBitsLeft >= 8 )
+	while( ( ( size_t )pOut & 3 ) != 0 && nBitsLeft >= 8 )
 	{
 		*pOut = ( unsigned char )ReadUBitLong( 8 );
 		++pOut;
@@ -397,8 +397,8 @@ void CBitRead::ReadBits( void *pOutData, int nBits )
 	// read dwords
 	while ( nBitsLeft >= 32 )
 	{
-		*( ( unsigned long* )pOut ) = ReadUBitLong( 32 );
-		pOut += sizeof( unsigned long );
+		*( ( uint32_t* )pOut ) = ReadUBitLong( 32 );
+		pOut += sizeof( uint32_t );
 		nBitsLeft -= 32;
 	}
 

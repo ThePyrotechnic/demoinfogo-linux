@@ -25,6 +25,7 @@
 #ifndef DEMOFILEPROPDECODE_H
 #define DEMOFILEPROPDECODE_H
 
+#include <stdio.h>
 #include <math.h>
 
 enum SendPropType_t

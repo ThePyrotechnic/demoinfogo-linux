@@ -22,6 +22,7 @@
 // THE POSSIBILITY OF SUCH DAMAGE.
 //===========================================================================//
 
+#include <algorithm>
 #include <stdarg.h>
 #include "demofile.h"
 #include "demofiledump.h"
