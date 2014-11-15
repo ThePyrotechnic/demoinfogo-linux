@@ -578,7 +578,6 @@ void ParseStringTableUpdate( CBitRead &buf, int entries, int nMaxEntries, int us
 	};
 
 	int lastEntry = -1;
-	int lastDictionaryIndex = -1;
 
 	// perform integer log2() to set nEntryBits
 	int nTemp = nMaxEntries;
@@ -656,7 +655,7 @@ void ParseStringTableUpdate( CBitRead &buf, int entries, int nMaxEntries, int us
 			else
 			{
 				nBytes = buf.ReadUBitLong( MAX_USERDATA_BITS );
-				if ( nBytes > sizeof( tempbuf ) )
+				if ( size_t(nBytes) > sizeof( tempbuf ) )
 				{
 					printf( "ParseStringTableUpdate: user data too large (%d bytes).", nBytes);
 					return;
@@ -1131,8 +1130,6 @@ void PrintNetMessage< CSVCMsg_PacketEntities, svc_PacketEntities >( CDemoFileDum
 		CBitRead entityBitBuffer( &msg.entity_data()[ 0 ], msg.entity_data().size() );
 		bool bAsDelta = msg.is_delta();
 		int nHeaderCount = msg.updated_entries();
-		int nBaseline = msg.baseline();
-		bool bUpdateBaselines = msg.update_baseline();
 		int nHeaderBase = -1;
 		int nNewEntity = -1;
 		int UpdateFlags = 0;
@@ -1425,7 +1422,7 @@ bool ParseDataTable( CBitRead &buf )
 	CSVCMsg_SendTable msg;
 	while ( 1 )
 	{
-		int type = buf.ReadVarInt32();
+		buf.ReadVarInt32();
 		
 		void *pBuffer = NULL;
 		int size = 0;
