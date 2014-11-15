@@ -69,7 +69,7 @@ option cc_generic_services = false;
 // time.
 //
 
-import "google/protobuf/descriptor.proto";
+// import "google/protobuf/descriptor.proto";
 
 //=============================================================================
 // Common Types

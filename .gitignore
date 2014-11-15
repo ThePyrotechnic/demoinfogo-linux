@@ -1,6 +1,6 @@
 .vagrant
 demoinfogo
-src/generated_proto/
+build
 protobuf-2.5.0
 *.dem
 *.tar

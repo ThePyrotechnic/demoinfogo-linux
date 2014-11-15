@@ -29,8 +29,8 @@
 #include "google/protobuf/reflection_ops.h"
 #include "google/protobuf/descriptor.pb.h"
 
-#include "generated_proto/cstrike15_usermessages_public.pb.h"
-#include "generated_proto/netmessages_public.pb.h"
+#include "cstrike15_usermessages_public.pb.h"
+#include "netmessages_public.pb.h"
 
 // in demofiledump.cpp
 extern const CSVCMsg_SendTable::sendprop_t *GetSendPropByIndex( uint32 uClass, uint32 uIndex );

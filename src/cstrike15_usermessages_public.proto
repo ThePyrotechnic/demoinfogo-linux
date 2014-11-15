@@ -56,7 +56,7 @@ option cc_generic_services = false;
 // time.
 //
 
-import "google/protobuf/descriptor.proto";
+// import "google/protobuf/descriptor.proto";
 
 // for CMsgVector, etc.
 import "netmessages_public.proto";
