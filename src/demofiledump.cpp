@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <stdarg.h>
+#include <json_spirit.h>
 #include "demofile.h"
 #include "demofiledump.h"
 #include "demofilepropdecode.h"
@@ -46,6 +47,7 @@ static std::vector< ExcludeEntry > s_currentExcludes;
 static std::vector< EntityEntry * > s_Entities;
 static std::vector< player_info_t > s_PlayerInfos;
 
+extern bool g_bDumpJson;
 extern bool g_bDumpGameEvents;
 extern bool g_bSupressFootstepEvents;
 extern bool g_bShowExtraPlayerInfoInGameEvents;
@@ -58,6 +60,14 @@ extern bool g_bDumpNetMessages;
 
 static bool s_bMatchStartOccured = false;
 static int s_nCurrentTick;
+
+json_spirit::mArray events;
+json_spirit::mObject match;
+
+void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type>& object)
+{
+    events.push_back(object);
+}
 
 EntityEntry *FindEntity( int nEntity );
 
@@ -88,7 +98,7 @@ bool CDemoFileDump::Open( const char *filename )
 
 void CDemoFileDump::MsgPrintf( const ::google::protobuf::Message& msg, int size, const char *fmt, ... )
 {
-	if ( g_bDumpNetMessages )
+	if ( g_bDumpNetMessages && !g_bDumpJson)
 	{
 		va_list vlist;
 		const std::string& TypeName = msg.GetTypeName();
@@ -196,9 +206,20 @@ void PrintNetMessage( CDemoFileDump& Demo, const void *parseBuffer, int BufferSi
 		{
 			Demo.m_GameEventList.CopyFrom( msg );
 		}
-
 		Demo.MsgPrintf( msg, BufferSize, "%s", msg.DebugString().c_str() );
 	}
+}
+
+template <>
+void PrintNetMessage< CSVCMsg_ServerInfo, svc_ServerInfo >( CDemoFileDump &Demo, const void *parseBuffer, int BufferSize )
+{
+    CSVCMsg_ServerInfo serverInfo;
+
+    if (g_bDumpJson) {
+        if (serverInfo.ParseFromArray(parseBuffer, BufferSize) && serverInfo.has_map_name())
+            match["map"] = serverInfo.map_name();
+    } else
+        Demo.DumpUserMessage( parseBuffer, BufferSize );
 }
 
 template <>
@@ -251,7 +272,8 @@ const CSVCMsg_GameEventList::descriptor_t *GetGameEventDescriptor( const CSVCMsg
 	{
 		if ( g_bDumpGameEvents )
 		{
-			printf( "%s", msg.DebugString().c_str() );
+            if (!g_bDumpJson)
+                printf( "%s", msg.DebugString().c_str() );
 		}
 		return NULL;
 	}
@@ -307,7 +329,13 @@ bool HandlePlayerConnectDisconnectEvents( const CSVCMsg_GameEvent &msg, const CS
 		{
 			if ( g_bDumpGameEvents )
 			{
-				printf( "Player %s (id:%d) disconnected. reason:%s\n", name, userid, reason );
+                if (g_bDumpJson)
+                    addEvent({{"type", "disconnect"},
+                              {"name", name},
+                              {"reason", reason},
+                              {"userid", userid}});
+                else
+                    printf( "Player %s (id:%d) disconnected. reason:%s\n", name, userid, reason );
 			}
 			// mark the player info slot as disconnected
 			player_info_t *pPlayerInfo = FindPlayerInfo( userid );
@@ -339,7 +367,13 @@ bool HandlePlayerConnectDisconnectEvents( const CSVCMsg_GameEvent &msg, const CS
 			{
 				if ( g_bDumpGameEvents )
 				{
-					printf( "Player %s %s (id:%d) connected.\n", newPlayer.guid, name, userid );
+                    if (g_bDumpJson)
+                        addEvent({{"type", "connect"},
+                                  {"name", name},
+                                  {"steamid", newPlayer.guid},
+                                  {"userid", userid}});
+                    else
+                        printf( "Player %s %s (id:%d) connected.\n", newPlayer.guid, name, userid );
 				}
 				s_PlayerInfos.push_back( newPlayer );
 			}
@@ -349,7 +383,7 @@ bool HandlePlayerConnectDisconnectEvents( const CSVCMsg_GameEvent &msg, const CS
 	return false;
 }
 
-bool ShowPlayerInfo( const char *pField, int nIndex, bool bShowDetails = true, bool bCSV = false )
+bool ShowPlayerInfo(json_spirit::mObject& event, const char *pField, int nIndex, bool bShowDetails = true, bool bCSV = false )
 {
 	player_info_t *pPlayerInfo = FindPlayerInfo( nIndex );
 	if ( pPlayerInfo )
@@ -360,7 +394,16 @@ bool ShowPlayerInfo( const char *pField, int nIndex, bool bShowDetails = true, b
 		}
 		else
 		{
-			printf( " %s: %s (id:%d)\n", pField, pPlayerInfo->name, nIndex );
+            if (g_bDumpJson) {
+                event[pField] = pPlayerInfo->xuid;
+                int nEntityIndex = FindPlayerEntityIndex( nIndex ) + 1;
+                EntityEntry *pEntity = FindEntity( nEntityIndex );
+                if (pEntity) {
+                    PropEntry *pTeamProp = pEntity->FindProp( "m_iTeamNum" );
+                }
+            }
+            else
+                printf( " %s: %s (id:%d)\n", pField, pPlayerInfo->name, nIndex );
 		}
 
 		if ( bShowDetails )
@@ -414,7 +457,7 @@ bool ShowPlayerInfo( const char *pField, int nIndex, bool bShowDetails = true, b
 	return false;
 }
 
-void HandlePlayerDeath( const CSVCMsg_GameEvent &msg, const CSVCMsg_GameEventList::descriptor_t *pDescriptor )
+void HandlePlayerDeath(json_spirit::mObject& event, const CSVCMsg_GameEvent &msg, const CSVCMsg_GameEventList::descriptor_t *pDescriptor )
 {
 	int numKeys = msg.keys().size();
 
@@ -450,16 +493,29 @@ void HandlePlayerDeath( const CSVCMsg_GameEvent &msg, const CSVCMsg_GameEventLis
 		}
 	}
 	
-	ShowPlayerInfo( "victim", userid, true, true );
-	printf ( ", " );
-	ShowPlayerInfo( "attacker", attackerid, true, true );
-	printf( ", %s, %s", pWeaponName, bHeadshot ? "true" : "false" );
+	ShowPlayerInfo(event, "victim", userid, true, true );
+    if (!g_bDumpJson)
+        printf ( ", " );
+	ShowPlayerInfo(event, "attacker", attackerid, true, true );
+    if (!g_bDumpJson)
+        printf( ", %s, %s", pWeaponName, bHeadshot ? "true" : "false" );
 	if ( assisterid != 0 )
 	{
-		printf ( ", " );
-		ShowPlayerInfo( "assister", assisterid, true, true );
+        if (!g_bDumpJson)
+            printf ( ", " );
+		ShowPlayerInfo(event, "assister", assisterid, true, true );
 	}
-	printf( "\n" );
+    if (!g_bDumpJson)
+        printf( "\n" );
+}
+
+template<typename T>
+void addProperty(json_spirit::mObject& event, const std::string& key, const T& value)
+{
+    if (g_bDumpJson)
+        event[key] = value;
+    else
+        std::cout << value << " ";
 }
 
 void ParseGameEvent( const CSVCMsg_GameEvent &msg, const CSVCMsg_GameEventList::descriptor_t *pDescriptor )
@@ -476,15 +532,19 @@ void ParseGameEvent( const CSVCMsg_GameEvent &msg, const CSVCMsg_GameEventList::
 					s_bMatchStartOccured = true;
 				}
 
+                json_spirit::mObject event;
 				bool bAllowDeathReport = !g_bSupressWarmupDeaths || s_bMatchStartOccured;
 				if ( pDescriptor->name().compare( "player_death" ) == 0 && g_bDumpDeaths && bAllowDeathReport )
 				{
-					HandlePlayerDeath( msg, pDescriptor );
+					HandlePlayerDeath(event,  msg, pDescriptor );
 				}
 
 				if ( g_bDumpGameEvents )
 				{
-					printf( "%s\n{\n", pDescriptor->name().c_str() );
+                    if (g_bDumpJson)
+                        event["type"] = pDescriptor->name();
+                    else
+                        printf( "%s\n{\n", pDescriptor->name().c_str() );
 				}
 				int numKeys = msg.keys().size();
 				for ( int i = 0; i < numKeys; i++ )
@@ -497,47 +557,52 @@ void ParseGameEvent( const CSVCMsg_GameEvent &msg, const CSVCMsg_GameEventList::
 						bool bHandled = false;
 						if ( Key.name().compare( "userid" ) == 0 || Key.name().compare( "attacker" ) == 0 || Key.name().compare( "assister" ) == 0 )
 						{
-							bHandled = ShowPlayerInfo( Key.name().c_str(), KeyValue.val_short(), g_bShowExtraPlayerInfoInGameEvents );
+							bHandled = ShowPlayerInfo(event, Key.name().c_str(), KeyValue.val_short(), g_bShowExtraPlayerInfoInGameEvents);
 						}
 						if ( !bHandled )
 						{
-							printf(" %s: ", Key.name().c_str() );
+                            if (!g_bDumpJson)
+                                printf(" %s: ", Key.name().c_str() );
 
 							if ( KeyValue.has_val_string() )
 							{
-								printf( "%s ", KeyValue.val_string().c_str() );
+                                addProperty(event, Key.name(), KeyValue.val_string());
 							}
 							if ( KeyValue.has_val_float() )
 							{
-								printf( "%f ", KeyValue.val_float() );
+                                addProperty(event, Key.name(), KeyValue.val_float());
 							}
 							if ( KeyValue.has_val_long() )
 							{
-								printf( "%d ", KeyValue.val_long() );
+                                addProperty(event, Key.name(), KeyValue.val_long());
 							}
 							if ( KeyValue.has_val_short() )
 							{
-								printf( "%d ", KeyValue.val_short() );
+                                addProperty(event, Key.name(), KeyValue.val_short());
 							}
 							if ( KeyValue.has_val_byte() )
 							{
-								printf( "%d ", KeyValue.val_byte() );
+                                addProperty(event, Key.name(), KeyValue.val_byte());
 							}
 							if ( KeyValue.has_val_bool() )
 							{
-								printf( "%d ", KeyValue.val_bool() );
+                                addProperty(event, Key.name(), KeyValue.val_bool());
 							}
 							if ( KeyValue.has_val_uint64() )
 							{
-								printf( "%"  PRIu64 " ", KeyValue.val_uint64() );
+                                addProperty(event, Key.name(), KeyValue.val_uint64());
 							}
-							printf( "\n" );
+							if (!g_bDumpJson)
+                                printf( "\n" );
 						}
 					}
 				}
 				if ( g_bDumpGameEvents )
 				{
-					printf( "}\n" );
+                    if (g_bDumpJson)
+                        events.push_back(event);
+                    else
+                        printf( "}\n" );
 				}
 			}
 		}
@@ -1718,5 +1783,9 @@ void CDemoFileDump::DoDump()
 				break;
 		}
 	}
+	if (g_bDumpJson) {
+        match["events"] = events;
+        write(match, std::cout);
+    }
 }
 

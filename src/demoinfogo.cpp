@@ -25,6 +25,7 @@
 #include "demofiledump.h"
 
 // these settings cause it to output nothing
+bool g_bDumpJson = false;
 bool g_bDumpGameEvents = false;
 bool g_bSupressFootstepEvents = true;
 bool g_bShowExtraPlayerInfoInGameEvents = false;
@@ -43,6 +44,7 @@ int main( int argc, char *argv[] )
 	{
 		printf( "demoinfogo filename.dem\n" );
 		printf( "optional arguments:\n" \
+                " -json          Dump as json.\n" \
 				" -gameevents    Dump out game events.\n" \
 				" -nofootsteps   Skip footstep events when dumping out game events.\n" \
 				"                Should be after -gameevents.\n" \
@@ -73,10 +75,10 @@ int main( int argc, char *argv[] )
 					g_bSupressFootstepEvents = false;
 					g_bShowExtraPlayerInfoInGameEvents = false;
 				}
-				else if ( strcasecmp( &argv[i][1], "nofootsteps" ) == 0 )
-				{
-					g_bSupressFootstepEvents = true;
-				}
+                else if ( strcasecmp( &argv[i][1], "nofootsteps" ) == 0 )
+                {
+                    g_bSupressFootstepEvents = true;
+                }
 				else if ( strcasecmp( &argv[i][1], "extrainfo" ) == 0 )
 				{
 					g_bShowExtraPlayerInfoInGameEvents = true;
@@ -106,6 +108,10 @@ int main( int argc, char *argv[] )
 				{
 					g_bDumpNetMessages = true;
 				}
+                else if ( strcasecmp( &argv[i][1], "json" ) == 0 )
+                {
+                    g_bDumpJson = true;
+                }
 			}
 			else
 			{
