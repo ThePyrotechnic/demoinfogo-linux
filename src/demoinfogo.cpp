@@ -58,7 +58,7 @@ int main( int argc, char *argv[] )
 				" -packetentites Dump Packet Entities messages.\n" \
 				" -netmessages   Dump net messages that are not one of the above.\n" \
 				"Note: by default everything is dumped out.\n" );
-		exit( 0 );
+		exit( 1 );
 	}
 
 	int nFileArgument = 1;
@@ -138,5 +138,5 @@ int main( int argc, char *argv[] )
 		DemoFileDump.DoDump();
 	}
 
-	return 1;
+	return 0;
 }
