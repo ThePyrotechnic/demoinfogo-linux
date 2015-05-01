@@ -23,6 +23,7 @@
 //===========================================================================//
 
 #include "demofiledump.h"
+#include "win_stuff.h"
 
 // these settings cause it to output nothing
 bool g_bDumpJson = false;

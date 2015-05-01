@@ -25,11 +25,12 @@
 #include <algorithm>
 #include <stdarg.h>
 #include <string>
+#include <set>
 #include <json_spirit.h>
 #include "demofile.h"
 #include "demofiledump.h"
 #include "demofilepropdecode.h"
-
+#include "win_stuff.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/reflection_ops.h"
 #include "google/protobuf/descriptor.pb.h"
@@ -90,7 +91,7 @@ void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type>& obj
     // The first time a player spawns add it to json with name and team properties
     if (object.at("type").get_str().compare("player_spawn") == 0) {
         bool done = false;
-        for (int i = 0; i < s_PlayerInfos.size(); i++)
+        for (size_t i = 0; i < s_PlayerInfos.size(); i++)
             if (s_PlayerInfos[i].xuid == object.at("userid").get_uint64()) {
                 setPlayerTeam(s_PlayerInfos[i].userID, object.at("teamnum").get_int());
                 done = true;
