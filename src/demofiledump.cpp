@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <stdarg.h>
+#include <string>
 #include <json_spirit.h>
 #include "demofile.h"
 #include "demofiledump.h"
@@ -46,9 +47,11 @@ static std::vector< CSVCMsg_SendTable > s_DataTables;
 static std::vector< ExcludeEntry > s_currentExcludes;
 static std::vector< EntityEntry * > s_Entities;
 static std::vector< player_info_t > s_PlayerInfos;
+static std::map<int, player_info_t> userid_info;
 
 extern bool g_bDumpJson;
 extern bool g_bDumpGameEvents;
+extern bool g_bOnlyHsBoxEvents;
 extern bool g_bSupressFootstepEvents;
 extern bool g_bShowExtraPlayerInfoInGameEvents;
 extern bool g_bDumpDeaths;
@@ -61,15 +64,78 @@ extern bool g_bDumpNetMessages;
 static bool s_bMatchStartOccured = false;
 static int s_nCurrentTick;
 
+void setPlayerTeam(int userid, int team);
+EntityEntry *FindEntity( int nEntity );
+player_info_t *FindPlayerInfo( int userId );
+int FindPlayerEntityIndex( int userId );
+
+void addUserId(const player_info_t& playerInfo)
+{
+    userid_info[playerInfo.userID] = playerInfo;
+}
+
+uint64 guid2xuid(std::string guid)
+{
+    return 2 * std::stoll(guid.substr(10)) + 76561197960265728LL + (guid[8] == '1');
+}
+
 json_spirit::mArray events;
 json_spirit::mObject match;
+json_spirit::mObject players;
+
+static std::set<std::string> hsbox_events = {"player_death", "round_start", "round_end"};
 
 void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type>& object)
 {
-    events.push_back(object);
+    // The first time a player spawns add it to json with name and team properties
+    if (object.at("type").get_str().compare("player_spawn") == 0) {
+        bool done = false;
+        for (int i = 0; i < s_PlayerInfos.size(); i++)
+            if (s_PlayerInfos[i].xuid == object.at("userid").get_uint64()) {
+                setPlayerTeam(s_PlayerInfos[i].userID, object.at("teamnum").get_int());
+                done = true;
+                break;
+            }
+        if (!done) {
+            for (auto& kv : userid_info) {
+                if (kv.second.xuid == object.at("userid").get_uint64()) {
+                    setPlayerTeam(kv.second.userID, object.at("teamnum").get_int());
+                    break;
+                }
+            }
+        }
+    }
+    if (!g_bOnlyHsBoxEvents || (g_bOnlyHsBoxEvents && hsbox_events.count(object.at("type").get_str())))
+        events.push_back(object);
 }
 
-EntityEntry *FindEntity( int nEntity );
+void setPlayerTeam(int userid, int team)
+{
+    if (userid == 21)
+        std::cerr << "setPlayerTeam() " << userid << " " << team << std::endl;
+    if (team != 2 && team != 3)
+        return;
+    player_info_t *pPlayerInfo = FindPlayerInfo(userid);
+    if (!pPlayerInfo) {
+        std::cerr << "\tfailed no userid" << std::endl;
+        return;
+    }
+    if (pPlayerInfo->fakeplayer) {
+        std::cerr << "\tfailed fake" << std::endl;
+        return;
+    }
+    std::cerr << "\t" << "setPlayerTeam() " << pPlayerInfo->name << " " << team << std::endl;
+    std::string xuid_str(std::to_string(pPlayerInfo->xuid));
+    if (!players.count(xuid_str))
+        players[xuid_str] = json_spirit::mObject();
+    json_spirit::mObject& player = players[xuid_str].get_obj();
+
+    if (!player.count("name"))
+        player["name"] = pPlayerInfo->name;
+    if (!player.count("team"))
+        player["team"] = team;
+}
+
 
 void fatal_errorf( const char* fmt, ... )
 {
@@ -216,8 +282,10 @@ void PrintNetMessage< CSVCMsg_ServerInfo, svc_ServerInfo >( CDemoFileDump &Demo,
     CSVCMsg_ServerInfo serverInfo;
 
     if (g_bDumpJson) {
-        if (serverInfo.ParseFromArray(parseBuffer, BufferSize) && serverInfo.has_map_name())
+        if (serverInfo.ParseFromArray(parseBuffer, BufferSize) && serverInfo.has_map_name()) {
             match["map"] = serverInfo.map_name();
+            match["tickrate"] = serverInfo.tick_interval();
+        }
     } else
         Demo.DumpUserMessage( parseBuffer, BufferSize );
 }
@@ -237,6 +305,11 @@ player_info_t *FindPlayerInfo( int userId )
 			return &(*i);
 		}
 	}
+
+	try {
+        return &userid_info.at(userId);
+    } catch (...) {
+    }
 
 	return NULL;
 }
@@ -294,6 +367,7 @@ bool HandlePlayerConnectDisconnectEvents( const CSVCMsg_GameEvent &msg, const CS
 		const char *name = NULL;
 		bool bBot = false;
 		const char *reason = NULL;
+        std::string guid;
 		for ( int i = 0; i < numKeys; i++ )
 		{
 			const CSVCMsg_GameEventList::key_t& Key = pDescriptor->keys( i );
@@ -313,6 +387,7 @@ bool HandlePlayerConnectDisconnectEvents( const CSVCMsg_GameEvent &msg, const CS
 			}
 			else if ( Key.name().compare( "networkid" ) == 0 )
 			{
+                guid = KeyValue.val_string();
 				bBot = ( KeyValue.val_string().compare( "BOT" ) == 0 );
 			}
 			else if ( Key.name().compare( "bot" ) == 0 )
@@ -324,6 +399,8 @@ bool HandlePlayerConnectDisconnectEvents( const CSVCMsg_GameEvent &msg, const CS
 				reason = KeyValue.val_string().c_str();
 			}
 		}
+		if (!g_bDumpJson)
+            printf("userid %d index %d\n", userid, index);
 
 		if ( bPlayerDisconnect )
 		{
@@ -340,7 +417,8 @@ bool HandlePlayerConnectDisconnectEvents( const CSVCMsg_GameEvent &msg, const CS
 			// mark the player info slot as disconnected
 			player_info_t *pPlayerInfo = FindPlayerInfo( userid );
             if (pPlayerInfo) {
-                printf( "Mark Player %s %s (id:%d) as disconnected\n", pPlayerInfo->name, pPlayerInfo->guid, pPlayerInfo->userID);
+                if (!g_bDumpJson)
+                    printf( "Mark Player %s %s (id:%d) as disconnected\n", pPlayerInfo->name, pPlayerInfo->guid, pPlayerInfo->userID);
                 strcpy( pPlayerInfo->name, "disconnected" );
                 pPlayerInfo->userID = -1;
                 pPlayerInfo->guid[ 0 ] = 0;
@@ -356,14 +434,26 @@ bool HandlePlayerConnectDisconnectEvents( const CSVCMsg_GameEvent &msg, const CS
 			if ( bBot )
 			{
 				strcpy( newPlayer.guid, "BOT" );
-			}
-				
+			} else {
+                strcpy(newPlayer.guid, guid.c_str());
+                newPlayer.xuid = guid2xuid(guid);
+            }
+
+            addUserId(newPlayer);
+
 			if ( index < s_PlayerInfos.size() )
 			{
 				// only replace existing player slot if the userID is different (very unlikely)
 				if ( s_PlayerInfos[ index ].userID != userid )
 				{
-					s_PlayerInfos[ index ] = newPlayer;
+                    if (!g_bDumpJson) {
+                        printf("userid %d index %d\n", userid, index);
+                        printf( "Player %s %s %ld (id:%d) replaced with Player %s %s %ld (id:%d).\n",
+                                s_PlayerInfos[index].guid, s_PlayerInfos[index].name, s_PlayerInfos[index].xuid, s_PlayerInfos[index].userID, newPlayer.guid,
+                                newPlayer.name, newPlayer.xuid, newPlayer.userID);
+                    }
+                    if (std::string(s_PlayerInfos[index].name).compare(name) != 0)
+                        s_PlayerInfos[ index ] = newPlayer;
 				}
 			}
 			else
@@ -406,7 +496,7 @@ bool ShowPlayerInfo(json_spirit::mObject& event, const char *pField, int nIndex,
                 }
             }
             else
-                printf( " %s: %s (id:%d)\n", pField, pPlayerInfo->name, nIndex );
+                printf( " %s: %s %ld (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid, nIndex );
 		}
 
 		if ( bShowDetails )
@@ -457,6 +547,8 @@ bool ShowPlayerInfo(json_spirit::mObject& event, const char *pField, int nIndex,
 		}
 		return true;
 	}
+    if (!g_bDumpJson)
+        printf("Cannot find player %d info.\n", nIndex);
 	return false;
 }
 
@@ -495,7 +587,7 @@ void HandlePlayerDeath(json_spirit::mObject& event, const CSVCMsg_GameEvent &msg
 			bHeadshot = KeyValue.val_bool();
 		}
 	}
-	
+
 	ShowPlayerInfo(event, "victim", userid, true, true );
     if (!g_bDumpJson)
         printf ( ", " );
@@ -544,8 +636,10 @@ void ParseGameEvent( const CSVCMsg_GameEvent &msg, const CSVCMsg_GameEventList::
 
 				if ( g_bDumpGameEvents )
 				{
-                    if (g_bDumpJson)
+                    if (g_bDumpJson) {
                         event["type"] = pDescriptor->name();
+                        event["tick"] = s_nCurrentTick;
+                    }
                     else
                         printf( "%s\n{\n", pDescriptor->name().c_str() );
 				}
@@ -603,7 +697,7 @@ void ParseGameEvent( const CSVCMsg_GameEvent &msg, const CSVCMsg_GameEventList::
 				if ( g_bDumpGameEvents )
 				{
                     if (g_bDumpJson)
-                        events.push_back(event);
+                        addEvent(event);
                     else
                         printf( "}\n" );
 				}
@@ -703,7 +797,7 @@ void ParseStringTableUpdate( CBitRead &buf, int entries, int nMaxEntries, int us
 
 			pEntry = entry;
 		}
-		
+
 		// Read in the user data.
 		unsigned char tempbuf[ MAX_USERDATA_SIZE ];
 		memset( tempbuf, 0, sizeof( tempbuf ) );
@@ -752,6 +846,10 @@ void ParseStringTableUpdate( CBitRead &buf, int entries, int nMaxEntries, int us
 			bool bAdded = false;
 			if ( (unsigned int)entryIndex < s_PlayerInfos.size() )
 			{
+                if (!g_bDumpJson)
+                    printf( "Player %s %s (id:%d) replaced2 with Player %s %s (id:%d).\n",
+                            s_PlayerInfos[entryIndex].guid, s_PlayerInfos[entryIndex].name, s_PlayerInfos[entryIndex].userID,
+                            playerInfo.guid, playerInfo.name, playerInfo.userID);
 				s_PlayerInfos[ entryIndex ] = playerInfo;
 			}
 			else
@@ -759,6 +857,8 @@ void ParseStringTableUpdate( CBitRead &buf, int entries, int nMaxEntries, int us
 				bAdded = true;
 				s_PlayerInfos.push_back( playerInfo );
 			}
+            addUserId(playerInfo);
+
 
 			if ( g_bDumpStringTables )
 			{
@@ -1491,7 +1591,7 @@ bool ParseDataTable( CBitRead &buf )
 	while ( 1 )
 	{
 		buf.ReadVarInt32();
-		
+
 		void *pBuffer = NULL;
 		int size = 0;
 		if ( !ReadFromBuffer( buf, &pBuffer, size ) )
@@ -1509,7 +1609,7 @@ bool ParseDataTable( CBitRead &buf )
 
 		s_DataTables.push_back( msg );
 	}
-	
+
 	short nServerClasses = buf.ReadShort();
 	assert( nServerClasses );
 	for ( int i = 0; i < nServerClasses; i++ )
@@ -1588,7 +1688,7 @@ bool DumpStringTable( CBitRead &buf, bool bIsUserInfo )
 	for ( int i = 0 ; i < numstrings; i++ )
 	{
 		char stringname[4096];
-		
+
 		buf.ReadString( stringname, sizeof( stringname ) );
 
 		assert( strlen( stringname ) < 100 );
@@ -1619,6 +1719,7 @@ bool DumpStringTable( CBitRead &buf, bool bIsUserInfo )
 				}
 
 				s_PlayerInfos.push_back( playerInfo );
+                addUserId(playerInfo);
 			}
 			else
 			{
@@ -1774,7 +1875,7 @@ void CDemoFileDump::DoDump()
 					m_demofile.ReadUserCmd( NULL, dummy );
 				}
 				break;
-			
+
 			case dem_signon:
 			case dem_packet:
 				{
@@ -1788,6 +1889,7 @@ void CDemoFileDump::DoDump()
 	}
 	if (g_bDumpJson) {
         match["events"] = events;
+        match["players"] = players;
         write(match, std::cout);
     }
 }
