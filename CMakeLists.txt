@@ -17,7 +17,7 @@ PROTOBUF_GENERATE_CPP(PROTO2_SRCS PROTO2_HDRS src/cstrike15_usermessages_public.
 find_package(JsonSpirit REQUIRED)
 include_directories(${JSON_SPIRIT_INCLUDE_DIR})
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++0x")
 add_executable(demoinfogo
     src/demofile.cpp
     src/demofiledump.cpp
