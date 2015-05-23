@@ -1,1 +1,1 @@
-*.cpp *.hpp: uncrustify -l CPP -f $TMPFILE -o $TMPFILE -c uncrustify.cfg
+*.cpp *.hpp: ln -s `pwd`/.clang-format `dirname $TMPFILE`; clang-format -i $TMPFILE -style=file
