@@ -29,7 +29,7 @@
 #include "demofilebitbuf.h"
 #include "demofilepropdecode.h"
 
-#include "netmessages_public.pb.h"
+#include "netmessages.pb.h"
 
 #define NET_MAX_PAYLOAD					( 262144 - 4 )		// largest message we can send in bytes
 #define DEMO_RECORD_BUFFER_SIZE			( 2 * 1024 * 1024 )	// temp buffer big enough to fit both string tables and server classes

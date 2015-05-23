@@ -11,8 +11,11 @@ find_package(Protobuf REQUIRED)
 include_directories(${PROTOBUF_INCLUDE_DIRS})
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
-PROTOBUF_GENERATE_CPP(PROTO1_SRCS PROTO1_HDRS src/netmessages_public.proto)
-PROTOBUF_GENERATE_CPP(PROTO2_SRCS PROTO2_HDRS src/cstrike15_usermessages_public.proto)
+PROTOBUF_GENERATE_CPP(PROTO1_SRCS PROTO1_HDRS
+    src/netmessages.proto
+    src/steammessages.proto
+    src/cstrike15_gcmessages.proto
+    src/cstrike15_usermessages.proto)
 
 find_package(JsonSpirit REQUIRED)
 include_directories(${JSON_SPIRIT_INCLUDE_DIR})
