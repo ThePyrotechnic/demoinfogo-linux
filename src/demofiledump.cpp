@@ -107,21 +107,17 @@ void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type> &obj
 }
 
 void setPlayerTeam(int userid, int team) {
-    if (userid == 21)
-        std::cerr << "setPlayerTeam() " << userid << " " << team << std::endl;
     if (team != 2 && team != 3)
         return;
     player_info_t *pPlayerInfo = FindPlayerInfo(userid);
     if (!pPlayerInfo) {
-        std::cerr << "\tfailed no userid" << std::endl;
+        //         std::cerr << "\tfailed no userid" << std::endl;
         return;
     }
     if (pPlayerInfo->fakeplayer) {
-        std::cerr << "\tfailed fake" << std::endl;
+        //         std::cerr << "\tfailed fake" << std::endl;
         return;
     }
-    std::cerr << "\t"
-              << "setPlayerTeam() " << pPlayerInfo->name << " " << team << std::endl;
     std::string xuid_str(std::to_string(pPlayerInfo->xuid));
     if (!players.count(xuid_str))
         players[xuid_str] = json_spirit::mObject();
@@ -452,11 +448,6 @@ bool ShowPlayerInfo(json_spirit::mObject &event,
         } else {
             if (g_bDumpJson) {
                 event[pField] = pPlayerInfo->xuid;
-                int nEntityIndex = FindPlayerEntityIndex(nIndex) + 1;
-                EntityEntry *pEntity = FindEntity(nEntityIndex);
-                if (pEntity) {
-                    PropEntry *pTeamProp = pEntity->FindProp("m_iTeamNum");
-                }
             } else
                 printf(" %s: %s %ld (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid,
                        nIndex);
@@ -1648,6 +1639,13 @@ void CDemoFileDump::DoDump() {
     if (g_bDumpJson) {
         match["events"] = events;
         match["players"] = players;
+        match["servername"] = m_demofile.m_DemoHeader.servername;
+        json_spirit::mArray gotv_bots;
+        for (auto &kv : userid_info)
+            if (kv.second.ishltv)
+                gotv_bots.push_back(kv.second.name);
+        match["gotv_bots"] = gotv_bots;
+
         write(match, std::cout);
     }
 }
