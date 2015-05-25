@@ -27,6 +27,7 @@
 
 // these settings cause it to output nothing
 bool g_bDumpJson = false;
+bool g_bPrettyJson = false;
 bool g_bDumpGameEvents = false;
 bool g_bOnlyHsBoxEvents = false;
 bool g_bSupressFootstepEvents = true;
@@ -90,6 +91,8 @@ int main(int argc, char *argv[]) {
                     g_bDumpNetMessages = true;
                 } else if (strcasecmp(&argv[i][1], "json") == 0) {
                     g_bDumpJson = true;
+                } else if (strcasecmp(&argv[i][1], "pretty") == 0) {
+                    g_bPrettyJson = true;
                 } else if (strcasecmp(&argv[i][1], "hsbox") == 0) {
                     g_bDumpJson = g_bDumpGameEvents = g_bOnlyHsBoxEvents = true;
                 }

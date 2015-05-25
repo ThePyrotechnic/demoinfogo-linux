@@ -51,6 +51,7 @@ static std::vector<player_info_t> s_PlayerInfos;
 static std::map<int, player_info_t> userid_info;
 
 extern bool g_bDumpJson;
+extern bool g_bPrettyJson;
 extern bool g_bDumpGameEvents;
 extern bool g_bOnlyHsBoxEvents;
 extern bool g_bSupressFootstepEvents;
@@ -65,7 +66,6 @@ extern bool g_bDumpNetMessages;
 static bool s_bMatchStartOccured = false;
 static int s_nCurrentTick;
 
-void setPlayerTeam(int userid, int team);
 EntityEntry *FindEntity(int nEntity);
 player_info_t *FindPlayerInfo(int userId);
 int FindPlayerEntityIndex(int userId);
@@ -78,55 +78,14 @@ uint64 guid2xuid(std::string guid) {
 
 json_spirit::mArray events;
 json_spirit::mObject match;
-json_spirit::mObject players;
 
-static std::set<std::string> hsbox_events = {"player_death", "round_start", "round_end"};
+static std::set<std::string> hsbox_events = {
+    "player_death", "round_start", "round_end", "player_spawn", "game_restart"};
 
 void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type> &object) {
-    // The first time a player spawns add it to json with name and team properties
-    if (object.at("type").get_str().compare("player_spawn") == 0) {
-        bool done = false;
-        for (size_t i = 0; i < s_PlayerInfos.size(); i++)
-            if (s_PlayerInfos[i].xuid == object.at("userid").get_uint64()) {
-                setPlayerTeam(s_PlayerInfos[i].userID, object.at("teamnum").get_int());
-                done = true;
-                break;
-            }
-        if (!done) {
-            for (auto &kv : userid_info) {
-                if (kv.second.xuid == object.at("userid").get_uint64()) {
-                    setPlayerTeam(kv.second.userID, object.at("teamnum").get_int());
-                    break;
-                }
-            }
-        }
-    }
     if (!g_bOnlyHsBoxEvents ||
         (g_bOnlyHsBoxEvents && hsbox_events.count(object.at("type").get_str())))
         events.push_back(object);
-}
-
-void setPlayerTeam(int userid, int team) {
-    if (team != 2 && team != 3)
-        return;
-    player_info_t *pPlayerInfo = FindPlayerInfo(userid);
-    if (!pPlayerInfo) {
-        //         std::cerr << "\tfailed no userid" << std::endl;
-        return;
-    }
-    if (pPlayerInfo->fakeplayer) {
-        //         std::cerr << "\tfailed fake" << std::endl;
-        return;
-    }
-    std::string xuid_str(std::to_string(pPlayerInfo->xuid));
-    if (!players.count(xuid_str))
-        players[xuid_str] = json_spirit::mObject();
-    json_spirit::mObject &player = players[xuid_str].get_obj();
-
-    if (!player.count("name"))
-        player["name"] = pPlayerInfo->name;
-    if (!player.count("team"))
-        player["team"] = team;
 }
 
 void fatal_errorf(const char *fmt, ...) {
@@ -174,6 +133,27 @@ void PrintUserMessage(CDemoFileDump &Demo, const void *parseBuffer, int BufferSi
 
     if (msg.ParseFromArray(parseBuffer, BufferSize)) {
         Demo.MsgPrintf(msg, BufferSize, "%s", msg.DebugString().c_str());
+    }
+}
+
+template <>
+void PrintUserMessage<CCSUsrMsg_TextMsg, CS_UM_TextMsg>(CDemoFileDump &Demo,
+                                                        const void *parseBuffer,
+                                                        int BufferSize) {
+    CCSUsrMsg_TextMsg msg;
+    if (msg.ParseFromArray(parseBuffer, BufferSize)) {
+        if (g_bDumpJson) {
+            if (g_bOnlyHsBoxEvents) {
+                for (const auto& p : msg.params()) {
+                    if (p == "#SFUI_Notice_Game_will_restart_in") {
+                        addEvent({{"type", "game_restart"}});
+                        break;
+                    }
+                }
+            }
+        } else
+            Demo.MsgPrintf(msg, BufferSize, "%s", msg.DebugString().c_str());
+    } else {
     }
 }
 
@@ -1638,7 +1618,6 @@ void CDemoFileDump::DoDump() {
     }
     if (g_bDumpJson) {
         match["events"] = events;
-        match["players"] = players;
         match["servername"] = m_demofile.m_DemoHeader.servername;
         json_spirit::mArray gotv_bots;
         for (auto &kv : userid_info)
@@ -1646,6 +1625,9 @@ void CDemoFileDump::DoDump() {
                 gotv_bots.push_back(kv.second.name);
         match["gotv_bots"] = gotv_bots;
 
-        write(match, std::cout);
+        int options = 0;
+        if (g_bPrettyJson)
+            options = json_spirit::pretty_print | json_spirit::remove_trailing_zeros;
+        json_spirit::write(match, std::cout, options);
     }
 }
