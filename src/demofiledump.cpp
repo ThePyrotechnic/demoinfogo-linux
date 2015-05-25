@@ -78,6 +78,7 @@ uint64 guid2xuid(std::string guid) {
 
 json_spirit::mArray events;
 json_spirit::mObject match;
+json_spirit::mObject mm_rank_update;
 
 static std::set<std::string> hsbox_events = {
     "player_death", "round_start", "round_end", "player_spawn", "game_restart"};
@@ -144,11 +145,40 @@ void PrintUserMessage<CCSUsrMsg_TextMsg, CS_UM_TextMsg>(CDemoFileDump &Demo,
     if (msg.ParseFromArray(parseBuffer, BufferSize)) {
         if (g_bDumpJson) {
             if (g_bOnlyHsBoxEvents) {
-                for (const auto& p : msg.params()) {
+                for (const auto &p : msg.params()) {
                     if (p == "#SFUI_Notice_Game_will_restart_in") {
                         addEvent({{"type", "game_restart"}});
                         break;
                     }
+                }
+            }
+        } else
+            Demo.MsgPrintf(msg, BufferSize, "%s", msg.DebugString().c_str());
+    } else {
+    }
+}
+
+template <>
+void PrintUserMessage<CCSUsrMsg_ServerRankUpdate, CS_UM_ServerRankUpdate>(CDemoFileDump &Demo,
+                                                                          const void *parseBuffer,
+                                                                          int BufferSize) {
+    CCSUsrMsg_ServerRankUpdate msg;
+    if (msg.ParseFromArray(parseBuffer, BufferSize)) {
+        if (g_bDumpJson) {
+            if (g_bOnlyHsBoxEvents) {
+                for (int i = 0; i < msg.rank_update_size(); ++i) {
+                    const auto& ru = msg.rank_update(i);
+                    uint64 xuid = 76561197960265728LL + ru.account_id();
+                    json_spirit::mObject tmp;
+                    if (ru.has_num_wins())
+                        tmp["num_wins"] = ru.num_wins();
+                    if (ru.has_rank_old())
+                        tmp["rank_old"] = ru.rank_old();
+                    if (ru.has_rank_new())
+                        tmp["rank_new"] = ru.rank_new();
+                    if (ru.has_rank_change())
+                        tmp["rank_change"] = ru.rank_change();
+                    mm_rank_update[std::to_string(xuid)] = tmp;
                 }
             }
         } else
@@ -222,6 +252,7 @@ void CDemoFileDump::DumpUserMessage(const void *parseBuffer, int BufferSize) {
             HANDLE_UserMsg(MarkAchievement);
             HANDLE_UserMsg(ItemDrop);
             HANDLE_UserMsg(GlowPropTurnOff);
+            HANDLE_UserMsg(ServerRankUpdate);
 
 #undef HANDLE_UserMsg
         }
@@ -1624,6 +1655,8 @@ void CDemoFileDump::DoDump() {
             if (kv.second.ishltv)
                 gotv_bots.push_back(kv.second.name);
         match["gotv_bots"] = gotv_bots;
+        if (!mm_rank_update.empty())
+            match["mm_rank_update"] = mm_rank_update;
 
         int options = 0;
         if (g_bPrettyJson)
