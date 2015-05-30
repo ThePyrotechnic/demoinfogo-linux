@@ -26,6 +26,7 @@
 #include <stdarg.h>
 #include <string>
 #include <set>
+#include <unordered_map>
 #include <json_spirit.h>
 #include "demofile.h"
 #include "demofiledump.h"
@@ -65,12 +66,17 @@ extern bool g_bDumpNetMessages;
 
 static bool s_bMatchStartOccured = false;
 static int s_nCurrentTick;
+json_spirit::mObject player_names;
 
 EntityEntry *FindEntity(int nEntity);
 player_info_t *FindPlayerInfo(int userId);
 int FindPlayerEntityIndex(int userId);
 
-void addUserId(const player_info_t &playerInfo) { userid_info[playerInfo.userID] = playerInfo; }
+void addUserId(const player_info_t &playerInfo) {
+    userid_info[playerInfo.userID] = playerInfo;
+    if (!playerInfo.fakeplayer && !playerInfo.ishltv)
+        player_names[std::to_string(playerInfo.xuid)] = std::string(playerInfo.name);
+}
 
 uint64 guid2xuid(std::string guid) {
     return 2 * std::stoll(guid.substr(10)) + 76561197960265728LL + (guid[8] == '1');
@@ -79,11 +85,25 @@ uint64 guid2xuid(std::string guid) {
 json_spirit::mArray events;
 json_spirit::mObject match;
 json_spirit::mObject mm_rank_update;
+std::pair<int, int> score_snapshot;
+
+struct Team {
+    int total_score;
+};
+
+std::unordered_map<int, int> id2teamno;
+Team teams[4];
+
 
 static std::set<std::string> hsbox_events = {
-    "player_death", "round_start", "round_end", "player_spawn", "game_restart"};
+    "player_death", "round_start", "round_end", "player_spawn", "game_restart", "score_changed"};
 
 void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type> &object) {
+    if (g_bOnlyHsBoxEvents) {
+        // Save score snapshot for later when we check if we're switching sides
+        if (object.at("type").get_str() == "round_start")
+            score_snapshot = std::make_pair(teams[2].total_score, teams[3].total_score);
+    }
     if (!g_bOnlyHsBoxEvents ||
         (g_bOnlyHsBoxEvents && hsbox_events.count(object.at("type").get_str())))
         events.push_back(object);
@@ -138,27 +158,6 @@ void PrintUserMessage(CDemoFileDump &Demo, const void *parseBuffer, int BufferSi
 }
 
 template <>
-void PrintUserMessage<CCSUsrMsg_TextMsg, CS_UM_TextMsg>(CDemoFileDump &Demo,
-                                                        const void *parseBuffer,
-                                                        int BufferSize) {
-    CCSUsrMsg_TextMsg msg;
-    if (msg.ParseFromArray(parseBuffer, BufferSize)) {
-        if (g_bDumpJson) {
-            if (g_bOnlyHsBoxEvents) {
-                for (const auto &p : msg.params()) {
-                    if (p == "#SFUI_Notice_Game_will_restart_in") {
-                        addEvent({{"type", "game_restart"}});
-                        break;
-                    }
-                }
-            }
-        } else
-            Demo.MsgPrintf(msg, BufferSize, "%s", msg.DebugString().c_str());
-    } else {
-    }
-}
-
-template <>
 void PrintUserMessage<CCSUsrMsg_ServerRankUpdate, CS_UM_ServerRankUpdate>(CDemoFileDump &Demo,
                                                                           const void *parseBuffer,
                                                                           int BufferSize) {
@@ -167,7 +166,7 @@ void PrintUserMessage<CCSUsrMsg_ServerRankUpdate, CS_UM_ServerRankUpdate>(CDemoF
         if (g_bDumpJson) {
             if (g_bOnlyHsBoxEvents) {
                 for (int i = 0; i < msg.rank_update_size(); ++i) {
-                    const auto& ru = msg.rank_update(i);
+                    const auto &ru = msg.rank_update(i);
                     uint64 xuid = 76561197960265728LL + ru.account_id();
                     json_spirit::mObject tmp;
                     if (ru.has_num_wins())
@@ -1079,6 +1078,44 @@ int ReadFieldIndex(CBitRead &entityBitBuffer, int lastIndex, bool bNewWay) {
     return lastIndex + 1 + ret;
 }
 
+bool updateTeamScore(uint32 entity_id, int val) {
+    int teamno = id2teamno[entity_id];
+    Team &team = teams[teamno];
+    // Check for weird score update
+    if (val < score_snapshot.first && val < score_snapshot.second)
+        return false;
+    // No change really
+    if (team.total_score == val)
+        return false;
+    team.total_score = val;
+    return true;
+}
+
+void handleTeamProp(uint32 entity_id, const std::string &key, const Prop_t &value) {
+    if (key == "m_iTeamNum") {
+        if (value.m_value.m_int == 2 || value.m_value.m_int == 3)
+            id2teamno[entity_id] = value.m_value.m_int;
+        return;
+    }
+    if (!id2teamno.count(entity_id))
+        return;
+
+    if (key != "m_scoreTotal")
+        return;
+    bool changed = updateTeamScore(entity_id, value.m_value.m_int);
+    if (changed) {
+        if (g_bOnlyHsBoxEvents)
+            events.push_back(json_spirit::mObject({{"type", "score_changed"},
+                                                   {"tick", s_nCurrentTick},
+//                                                    {"score",
+//                                                     (std::to_string(teams[2].total_score) + " - " +
+//                                                      std::to_string(teams[3].total_score))}
+
+            }));
+//         std::cerr << entity_id << " " << value.m_value.m_int << std::endl;
+    }
+}
+
 bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
     bool bNewWay = (entityBitBuffer.ReadOneBit() == 1); // 0 = old way, 1 = new way
 
@@ -1096,12 +1133,20 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
     if (g_bDumpPacketEntities) {
         printf("Table: %s\n", pTable->net_table_name().c_str());
     }
+    bool team = pTable->net_table_name() == "DT_CSTeam";
+    bool gamerules = pTable->net_table_name() == "DT_CSGameRulesProxy";
     for (unsigned int i = 0; i < fieldIndices.size(); i++) {
         FlattenedPropEntry *pSendProp = GetSendPropByIndex(pEntity->m_uClass, fieldIndices[i]);
         if (pSendProp) {
             Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
                                        fieldIndices[i], !g_bDumpPacketEntities);
             pEntity->AddOrUpdateProp(pSendProp, pProp);
+            if (team) {
+                handleTeamProp(pEntity->m_uSerialNum, pSendProp->m_prop->var_name(), *pProp);
+            } else if (gamerules && pSendProp->m_prop->var_name() == "m_bGameRestart" &&
+                       pProp->m_value.m_int) {
+                addEvent({{"type", "game_restart"}, {"tick", s_nCurrentTick}});
+            }
         } else {
             return false;
         }
@@ -1650,6 +1695,7 @@ void CDemoFileDump::DoDump() {
     if (g_bDumpJson) {
         match["events"] = events;
         match["servername"] = m_demofile.m_DemoHeader.servername;
+        match["player_names"] = player_names;
         json_spirit::mArray gotv_bots;
         for (auto &kv : userid_info)
             if (kv.second.ishltv)
