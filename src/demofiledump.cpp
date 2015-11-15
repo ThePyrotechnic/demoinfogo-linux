@@ -1105,14 +1105,15 @@ void handleTeamProp(uint32 entity_id, const std::string &key, const Prop_t &valu
     bool changed = updateTeamScore(entity_id, value.m_value.m_int);
     if (changed) {
         if (g_bOnlyHsBoxEvents)
-            events.push_back(json_spirit::mObject({{"type", "score_changed"},
-                                                   {"tick", s_nCurrentTick},
-//                                                    {"score",
-//                                                     (std::to_string(teams[2].total_score) + " - " +
-//                                                      std::to_string(teams[3].total_score))}
+            events.push_back(json_spirit::mObject({
+                {"type", "score_changed"}, {"tick", s_nCurrentTick},
+                //                                                    {"score",
+                //                                                     (std::to_string(teams[2].total_score)
+                //                                                     + " - " +
+                //                                                      std::to_string(teams[3].total_score))}
 
             }));
-//         std::cerr << entity_id << " " << value.m_value.m_int << std::endl;
+        //         std::cerr << entity_id << " " << value.m_value.m_int << std::endl;
     }
 }
 
