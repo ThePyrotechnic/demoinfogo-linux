@@ -67,7 +67,7 @@ int main(int argc, char *argv[]) {
     if (argc > 2) {
         for (int i = 1; i < argc; i++) {
             // arguments start with - or /
-            if (argv[i][0] == '-' || argv[i][0] == '/') {
+            if (argv[i][0] == '-') {
                 if (strcasecmp(&argv[i][1], "gameevents") == 0) {
                     g_bDumpGameEvents = true;
                     g_bSupressFootstepEvents = false;
