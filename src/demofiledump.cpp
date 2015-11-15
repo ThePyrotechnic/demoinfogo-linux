@@ -93,16 +93,29 @@ struct Team {
 
 std::unordered_map<int, int> id2teamno;
 Team teams[4];
-
+double tick_rate = -1;
+std::map<uint64_t, int> jumped_last;
+double jump_duration = 0.75; // seconds
 
 static std::set<std::string> hsbox_events = {
     "player_death", "round_start", "round_end", "player_spawn", "game_restart", "score_changed"};
 
-void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type> &object) {
+void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type> &object_) {
+    std::map<std::string, json_spirit::mConfig::Value_type> object = object_;
     if (g_bOnlyHsBoxEvents) {
+        std::string type = object.at("type").get_str();
         // Save score snapshot for later when we check if we're switching sides
-        if (object.at("type").get_str() == "round_start")
+        if (type == "round_start")
             score_snapshot = std::make_pair(teams[2].total_score, teams[3].total_score);
+        else if (type == "player_jump")
+            jumped_last[object.at("userid").get_int64()] = s_nCurrentTick;
+        else if (type == "player_death") {
+            uint64 attackerid = object.at("attacker").get_int64();
+            if (tick_rate > 0 && jumped_last.count(attackerid) &&
+                jumped_last[attackerid] >= s_nCurrentTick - jump_duration / tick_rate) {
+                object["jump"] = s_nCurrentTick - jumped_last[attackerid];
+            }
+        }
     }
     if (!g_bOnlyHsBoxEvents ||
         (g_bOnlyHsBoxEvents && hsbox_events.count(object.at("type").get_str())))
@@ -283,6 +296,7 @@ void PrintNetMessage<CSVCMsg_ServerInfo, svc_ServerInfo>(CDemoFileDump &Demo,
         }
     } else
         Demo.DumpUserMessage(parseBuffer, BufferSize);
+    tick_rate = serverInfo.tick_interval();
 }
 
 template <>
