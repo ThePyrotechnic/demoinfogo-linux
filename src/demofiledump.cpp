@@ -39,6 +39,10 @@
 #include "google/protobuf/descriptor.pb.h"
 #include "cstrike15_usermessages.pb.h"
 #include "netmessages.pb.h"
+#if defined(_WIN32) || defined(_WIN64)
+#include <io.h>
+#include <fcntl.h>
+#endif
 
 // file globals
 static int s_nNumStringTables;
@@ -1728,6 +1732,9 @@ void CDemoFileDump::DoDump() {
         int options = 0;
         if (g_bPrettyJson)
             options = json_spirit::pretty_print | json_spirit::remove_trailing_zeros;
+#if defined(_WIN32) || defined(_WIN64)
+        _setmode(_fileno(stdout), _O_U8TEXT);
+#endif
         json_spirit::write(match, std::wcout, options);
     }
 }
