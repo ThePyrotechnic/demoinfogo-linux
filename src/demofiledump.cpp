@@ -27,6 +27,8 @@
 #include <string>
 #include <set>
 #include <unordered_map>
+#include <locale>
+#include <codecvt>
 #include <json_spirit.h>
 #include "demofile.h"
 #include "demofiledump.h"
@@ -35,7 +37,6 @@
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/reflection_ops.h"
 #include "google/protobuf/descriptor.pb.h"
-
 #include "cstrike15_usermessages.pb.h"
 #include "netmessages.pb.h"
 
@@ -66,25 +67,30 @@ extern bool g_bDumpNetMessages;
 
 static bool s_bMatchStartOccured = false;
 static int s_nCurrentTick;
-json_spirit::mObject player_names;
+json_spirit::wmObject player_names;
 
 EntityEntry *FindEntity(int nEntity);
 player_info_t *FindPlayerInfo(int userId);
 int FindPlayerEntityIndex(int userId);
 
+std::wstring toWide(const std::string& s)
+{
+    return std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(s);
+}
+
 void addUserId(const player_info_t &playerInfo) {
     userid_info[playerInfo.userID] = playerInfo;
     if (!playerInfo.fakeplayer && !playerInfo.ishltv)
-        player_names[std::to_string(playerInfo.xuid)] = std::string(playerInfo.name);
+        player_names[std::to_wstring(playerInfo.xuid)] = toWide(playerInfo.name);
 }
 
 uint64 guid2xuid(std::string guid) {
     return 2 * std::stoll(guid.substr(10)) + 76561197960265728LL + (guid[8] == '1');
 }
 
-json_spirit::mArray events;
-json_spirit::mObject match;
-json_spirit::mObject mm_rank_update;
+json_spirit::wmArray events;
+json_spirit::wmObject match;
+json_spirit::wmObject mm_rank_update;
 std::pair<int, int> score_snapshot;
 
 struct Team {
@@ -97,28 +103,28 @@ double tick_rate = -1;
 std::map<uint64_t, int> jumped_last;
 double jump_duration = 0.75; // seconds
 
-static std::set<std::string> hsbox_events = {
-    "player_death", "round_start", "round_end", "player_spawn", "game_restart", "score_changed"};
+static std::set<std::wstring> hsbox_events = {
+    L"player_death", L"round_start", L"round_end", L"player_spawn", L"game_restart", L"score_changed"};
 
-void addEvent(const std::map<std::string, json_spirit::mConfig::Value_type> &object_) {
-    std::map<std::string, json_spirit::mConfig::Value_type> object = object_;
+void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &object_) {
+    std::map<std::wstring, json_spirit::wmConfig::Value_type> object = object_;
     if (g_bOnlyHsBoxEvents) {
-        std::string type = object.at("type").get_str();
+        std::wstring type = object.at(L"type").get_str();
         // Save score snapshot for later when we check if we're switching sides
-        if (type == "round_start")
+        if (type == L"round_start")
             score_snapshot = std::make_pair(teams[2].total_score, teams[3].total_score);
-        else if (type == "player_jump")
-            jumped_last[object.at("userid").get_int64()] = s_nCurrentTick;
-        else if (type == "player_death") {
-            uint64 attackerid = object.at("attacker").get_int64();
+        else if (type == L"player_jump")
+            jumped_last[object.at(L"userid").get_int64()] = s_nCurrentTick;
+        else if (type == L"player_death") {
+            uint64 attackerid = object.at(L"attacker").get_int64();
             if (tick_rate > 0 && jumped_last.count(attackerid) &&
                 jumped_last[attackerid] >= s_nCurrentTick - jump_duration / tick_rate) {
-                object["jump"] = s_nCurrentTick - jumped_last[attackerid];
+                object[L"jump"] = s_nCurrentTick - jumped_last[attackerid];
             }
         }
     }
     if (!g_bOnlyHsBoxEvents ||
-        (g_bOnlyHsBoxEvents && hsbox_events.count(object.at("type").get_str())))
+        (g_bOnlyHsBoxEvents && hsbox_events.count(object.at(L"type").get_str())))
         events.push_back(object);
 }
 
@@ -181,16 +187,16 @@ void PrintUserMessage<CCSUsrMsg_ServerRankUpdate, CS_UM_ServerRankUpdate>(CDemoF
                 for (int i = 0; i < msg.rank_update_size(); ++i) {
                     const auto &ru = msg.rank_update(i);
                     uint64 xuid = 76561197960265728LL + ru.account_id();
-                    json_spirit::mObject tmp;
+                    json_spirit::wmObject tmp;
                     if (ru.has_num_wins())
-                        tmp["num_wins"] = ru.num_wins();
+                        tmp[L"num_wins"] = ru.num_wins();
                     if (ru.has_rank_old())
-                        tmp["rank_old"] = ru.rank_old();
+                        tmp[L"rank_old"] = ru.rank_old();
                     if (ru.has_rank_new())
-                        tmp["rank_new"] = ru.rank_new();
+                        tmp[L"rank_new"] = ru.rank_new();
                     if (ru.has_rank_change())
-                        tmp["rank_change"] = ru.rank_change();
-                    mm_rank_update[std::to_string(xuid)] = tmp;
+                        tmp[L"rank_change"] = ru.rank_change();
+                    mm_rank_update[std::to_wstring(xuid)] = tmp;
                 }
             }
         } else
@@ -291,8 +297,8 @@ void PrintNetMessage<CSVCMsg_ServerInfo, svc_ServerInfo>(CDemoFileDump &Demo,
 
     if (g_bDumpJson) {
         if (serverInfo.ParseFromArray(parseBuffer, BufferSize) && serverInfo.has_map_name()) {
-            match["map"] = serverInfo.map_name();
-            match["tickrate"] = serverInfo.tick_interval();
+            match[L"map"] = toWide(serverInfo.map_name());
+            match[L"tickrate"] = serverInfo.tick_interval();
         }
     } else
         Demo.DumpUserMessage(parseBuffer, BufferSize);
@@ -397,10 +403,10 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
         if (bPlayerDisconnect) {
             if (g_bDumpGameEvents) {
                 if (g_bDumpJson)
-                    addEvent({{"type", "disconnect"},
-                              {"name", name},
-                              {"reason", reason},
-                              {"userid", userid}});
+                    addEvent({{L"type", L"disconnect"},
+                              {L"name", toWide(name)},
+                              {L"reason", toWide(reason)},
+                              {L"userid", userid}});
                 else
                     printf("Player %s (id:%d) disconnected. reason:%s\n", name, userid, reason);
             }
@@ -445,10 +451,10 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
             } else {
                 if (g_bDumpGameEvents) {
                     if (g_bDumpJson)
-                        addEvent({{"type", "connect"},
-                                  {"name", name},
-                                  {"steamid", newPlayer.guid},
-                                  {"userid", userid}});
+                        addEvent({{L"type", L"connect"},
+                                  {L"name", toWide(name)},
+                                  {L"steamid", toWide(newPlayer.guid)},
+                                  {L"userid", userid}});
                     else
                         printf("Player %s %s (id:%d) connected.\n", newPlayer.guid, name, userid);
                 }
@@ -460,7 +466,7 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
     return false;
 }
 
-bool ShowPlayerInfo(json_spirit::mObject &event,
+bool ShowPlayerInfo(json_spirit::wmObject &event,
                     const char *pField,
                     int nIndex,
                     bool bShowDetails = true,
@@ -471,7 +477,7 @@ bool ShowPlayerInfo(json_spirit::mObject &event,
             printf("%s, %s, %d", pField, pPlayerInfo->name, nIndex);
         } else {
             if (g_bDumpJson) {
-                event[pField] = pPlayerInfo->xuid;
+                event[toWide(pField)] = pPlayerInfo->xuid;
             } else
                 printf(" %s: %s %ld (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid,
                        nIndex);
@@ -525,7 +531,7 @@ bool ShowPlayerInfo(json_spirit::mObject &event,
     return false;
 }
 
-void HandlePlayerDeath(json_spirit::mObject &event,
+void HandlePlayerDeath(json_spirit::wmObject &event,
                        const CSVCMsg_GameEvent &msg,
                        const CSVCMsg_GameEventList::descriptor_t *pDescriptor) {
     int numKeys = msg.keys().size();
@@ -568,11 +574,11 @@ void HandlePlayerDeath(json_spirit::mObject &event,
 }
 
 template <typename T>
-void addProperty(json_spirit::mObject &event, const std::string &key, const T &value) {
+void addProperty(json_spirit::wmObject &event, const std::string &key, const T &value) {
     if (g_bDumpJson)
-        event[key] = value;
+        event[toWide(key)] = value;
     else
-        std::cout << value << " ";
+        std::wcout << value << " ";
 }
 
 void ParseGameEvent(const CSVCMsg_GameEvent &msg,
@@ -584,7 +590,7 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                     s_bMatchStartOccured = true;
                 }
 
-                json_spirit::mObject event;
+                json_spirit::wmObject event;
                 bool bAllowDeathReport = !g_bSupressWarmupDeaths || s_bMatchStartOccured;
                 if (pDescriptor->name().compare("player_death") == 0 && g_bDumpDeaths &&
                     bAllowDeathReport) {
@@ -593,8 +599,8 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
 
                 if (g_bDumpGameEvents) {
                     if (g_bDumpJson) {
-                        event["type"] = pDescriptor->name();
-                        event["tick"] = s_nCurrentTick;
+                        event[L"type"] = toWide(pDescriptor->name());
+                        event[L"tick"] = s_nCurrentTick;
                     } else
                         printf("%s\n{\n", pDescriptor->name().c_str());
                 }
@@ -617,7 +623,7 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                                 printf(" %s: ", Key.name().c_str());
 
                             if (KeyValue.has_val_string()) {
-                                addProperty(event, Key.name(), KeyValue.val_string());
+                                addProperty(event, Key.name(), toWide(KeyValue.val_string()));
                             }
                             if (KeyValue.has_val_float()) {
                                 addProperty(event, Key.name(), KeyValue.val_float());
@@ -1119,8 +1125,8 @@ void handleTeamProp(uint32 entity_id, const std::string &key, const Prop_t &valu
     bool changed = updateTeamScore(entity_id, value.m_value.m_int);
     if (changed) {
         if (g_bOnlyHsBoxEvents)
-            events.push_back(json_spirit::mObject({
-                {"type", "score_changed"}, {"tick", s_nCurrentTick},
+            events.push_back(json_spirit::wmObject({
+                {L"type", L"score_changed"}, {L"tick", s_nCurrentTick},
                 //                                                    {"score",
                 //                                                     (std::to_string(teams[2].total_score)
                 //                                                     + " - " +
@@ -1160,7 +1166,7 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
                 handleTeamProp(pEntity->m_uSerialNum, pSendProp->m_prop->var_name(), *pProp);
             } else if (gamerules && pSendProp->m_prop->var_name() == "m_bGameRestart" &&
                        pProp->m_value.m_int) {
-                addEvent({{"type", "game_restart"}, {"tick", s_nCurrentTick}});
+                addEvent({{L"type", L"game_restart"}, {L"tick", s_nCurrentTick}});
             }
         } else {
             return false;
@@ -1708,20 +1714,20 @@ void CDemoFileDump::DoDump() {
         }
     }
     if (g_bDumpJson) {
-        match["events"] = events;
-        match["servername"] = m_demofile.m_DemoHeader.servername;
-        match["player_names"] = player_names;
-        json_spirit::mArray gotv_bots;
+        match[L"events"] = events;
+        match[L"servername"] = toWide(m_demofile.m_DemoHeader.servername);
+        match[L"player_names"] = player_names;
+        json_spirit::wmArray gotv_bots;
         for (auto &kv : userid_info)
             if (kv.second.ishltv)
-                gotv_bots.push_back(kv.second.name);
-        match["gotv_bots"] = gotv_bots;
+                gotv_bots.push_back(toWide(kv.second.name));
+        match[L"gotv_bots"] = gotv_bots;
         if (!mm_rank_update.empty())
-            match["mm_rank_update"] = mm_rank_update;
+            match[L"mm_rank_update"] = mm_rank_update;
 
         int options = 0;
         if (g_bPrettyJson)
             options = json_spirit::pretty_print | json_spirit::remove_trailing_zeros;
-        json_spirit::write(match, std::cout, options);
+        json_spirit::write(match, std::wcout, options);
     }
 }
