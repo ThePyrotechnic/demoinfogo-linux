@@ -77,8 +77,7 @@ EntityEntry *FindEntity(int nEntity);
 player_info_t *FindPlayerInfo(int userId);
 int FindPlayerEntityIndex(int userId);
 
-std::wstring toWide(const std::string& s)
-{
+std::wstring toWide(const std::string &s) {
     return std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(s);
 }
 
@@ -105,19 +104,25 @@ std::unordered_map<int, int> id2teamno;
 Team teams[4];
 double tick_rate = -1;
 std::map<uint64_t, int> jumped_last;
-double jump_duration = 0.75; // seconds
+const double jump_duration = 0.75; // seconds
+std::map<uint64_t, int> bot_takeover;
 
-static std::set<std::wstring> hsbox_events = {
-    L"player_death", L"round_start", L"round_end", L"player_spawn", L"game_restart", L"score_changed"};
+static std::set<std::wstring> hsbox_events = {L"player_death",
+                                              L"round_start",
+                                              L"round_end",
+                                              L"player_spawn",
+                                              L"game_restart",
+                                              L"score_changed"};
 
 void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &object_) {
     std::map<std::wstring, json_spirit::wmConfig::Value_type> object = object_;
     if (g_bOnlyHsBoxEvents) {
         std::wstring type = object.at(L"type").get_str();
         // Save score snapshot for later when we check if we're switching sides
-        if (type == L"round_start")
+        if (type == L"round_start") {
             score_snapshot = std::make_pair(teams[2].total_score, teams[3].total_score);
-        else if (type == L"player_jump")
+            bot_takeover.clear();
+        } else if (type == L"player_jump")
             jumped_last[object.at(L"userid").get_int64()] = s_nCurrentTick;
         else if (type == L"player_death") {
             uint64 attackerid = object.at(L"attacker").get_int64();
@@ -125,6 +130,10 @@ void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &o
                 jumped_last[attackerid] >= s_nCurrentTick - jump_duration / tick_rate) {
                 object[L"jump"] = s_nCurrentTick - jumped_last[attackerid];
             }
+        } else if (type == L"bot_takeover") {
+            uint64 human = object.at(L"userid").get_int64();
+            int bot = object.at(L"botid").get_int();
+            bot_takeover[human] = bot;
         }
     }
     if (!g_bOnlyHsBoxEvents ||
@@ -481,9 +490,22 @@ bool ShowPlayerInfo(json_spirit::wmObject &event,
             printf("%s, %s, %d", pField, pPlayerInfo->name, nIndex);
         } else {
             if (g_bDumpJson) {
-                event[toWide(pField)] = pPlayerInfo->xuid;
+                std::wstring field = toWide(pField);
                 if (pPlayerInfo->fakeplayer)
-                    event[toWide(pField)] = nIndex;
+                    event[field] = nIndex;
+                else {
+                    event[field] = pPlayerInfo->xuid;
+                    std::wstring type = event[L"type"].get_str();
+                    // Ignore player_spawn as this happens before round_start (where we clear the
+                    // bot_takeover map)
+                    // Also ignore player_death's assister field as csgo does the same
+                    // (resulting in awarding assists to the controlling human instead of the bot)
+                    if (bot_takeover.count(pPlayerInfo->xuid) && type != L"bot_takeover" &&
+                        type != L"player_spawn" &&
+                        (type != L"player_death" ||
+                         (type == L"player_death" && field != L"assister")))
+                        event[field] = bot_takeover[pPlayerInfo->xuid];
+                }
             } else
                 printf(" %s: %s %ld (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid,
                        nIndex);
