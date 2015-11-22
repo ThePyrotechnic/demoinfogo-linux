@@ -482,6 +482,8 @@ bool ShowPlayerInfo(json_spirit::wmObject &event,
         } else {
             if (g_bDumpJson) {
                 event[toWide(pField)] = pPlayerInfo->xuid;
+                if (pPlayerInfo->fakeplayer)
+                    event[toWide(pField)] = nIndex;
             } else
                 printf(" %s: %s %ld (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid,
                        nIndex);
