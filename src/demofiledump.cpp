@@ -112,7 +112,8 @@ static std::set<std::wstring> hsbox_events = {L"player_death",
                                               L"round_end",
                                               L"player_spawn",
                                               L"game_restart",
-                                              L"score_changed"};
+                                              L"score_changed",
+                                              L"round_officially_ended"};
 
 void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &object_) {
     std::map<std::wstring, json_spirit::wmConfig::Value_type> object = object_;
@@ -1153,15 +1154,10 @@ void handleTeamProp(uint32 entity_id, const std::string &key, const Prop_t &valu
     bool changed = updateTeamScore(entity_id, value.m_value.m_int);
     if (changed) {
         if (g_bOnlyHsBoxEvents)
-            events.push_back(json_spirit::wmObject({
-                {L"type", L"score_changed"}, {L"tick", s_nCurrentTick},
-                //                                                    {"score",
-                //                                                     (std::to_string(teams[2].total_score)
-                //                                                     + " - " +
-                //                                                      std::to_string(teams[3].total_score))}
-
-            }));
-        //         std::cerr << entity_id << " " << value.m_value.m_int << std::endl;
+            events.push_back(json_spirit::wmObject(
+                {{L"type", L"score_changed"},
+                 {L"tick", s_nCurrentTick},
+                 {L"score", json_spirit::wmArray({teams[2].total_score, teams[3].total_score})}}));
     }
 }
 
