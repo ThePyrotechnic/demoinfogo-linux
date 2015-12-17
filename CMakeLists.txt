@@ -22,6 +22,7 @@ include_directories(${JSON_SPIRIT_INCLUDE_DIR})
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++0x")
 add_executable(demoinfogo
+    src/geometry.cpp
     src/demofile.cpp
     src/demofiledump.cpp
     src/demoinfogo.cpp

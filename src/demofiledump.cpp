@@ -34,6 +34,7 @@
 #include "demofiledump.h"
 #include "demofilepropdecode.h"
 #include "win_stuff.h"
+#include "geometry.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/reflection_ops.h"
 #include "google/protobuf/descriptor.pb.h"
@@ -105,7 +106,25 @@ Team teams[4];
 double tick_rate = -1;
 std::map<uint64_t, int> jumped_last;
 const double jump_duration = 0.75; // seconds
+const double smoke_radius = 140;
+const double player_height = 72;
+const double player_crouch_height = 50;
+const double smoke_height = 130;
 std::map<uint64_t, int> bot_takeover;
+// Map entityid to Point
+std::map<int, Point> smokes;
+
+bool throughSmoke(Point p1, Point p2) {
+    for (auto &kv : smokes) {
+        Point killer(p1.x, p1.y, p1.z + player_crouch_height);
+        // Check if shooting to the legs AND head of the victim goes through smoke
+        if (intersects(killer, p2, kv.second, smoke_radius, smoke_height) &&
+            intersects(killer, Point(p2.x, p2.y, p2.z + player_height), kv.second, smoke_radius,
+                       smoke_height))
+            return true;
+    }
+    return false;
+}
 
 static std::set<std::wstring> hsbox_events = {L"player_death",
                                               L"round_start",
@@ -124,9 +143,10 @@ void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &o
         if (type == L"round_start") {
             score_snapshot = std::make_pair(teams[2].total_score, teams[3].total_score);
             bot_takeover.clear();
-        } else if (type == L"player_jump")
+            smokes.clear();
+        } else if (type == L"player_jump") {
             jumped_last[object.at(L"userid").get_int64()] = s_nCurrentTick;
-        else if (type == L"player_death") {
+        } else if (type == L"player_death") {
             uint64 attackerid = object.at(L"attacker").get_int64();
             if (tick_rate > 0 && jumped_last.count(attackerid) &&
                 jumped_last[attackerid] >= s_nCurrentTick - jump_duration / tick_rate) {
@@ -136,6 +156,11 @@ void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &o
             uint64 human = object.at(L"userid").get_int64();
             int bot = object.at(L"botid").get_int();
             bot_takeover[human] = bot;
+        } else if (type == L"smokegrenade_detonate") {
+            smokes[object.at(L"entityid").get_int()] = Point(
+                object.at(L"x").get_real(), object.at(L"y").get_real(), object.at(L"z").get_real());
+        } else if (type == L"smokegrenade_expired") {
+            smokes.erase(object.at(L"entityid").get_int());
         }
     }
     if (!g_bOnlyHsBoxEvents ||
@@ -481,6 +506,22 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
     return false;
 }
 
+bool getPlayerPosition(int nIndex, Point &p) {
+    int nEntityIndex = FindPlayerEntityIndex(nIndex) + 1;
+    EntityEntry *pEntity = FindEntity(nEntityIndex);
+    if (pEntity) {
+        PropEntry *pXYProp = pEntity->FindProp("m_vecOrigin");
+        PropEntry *pZProp = pEntity->FindProp("m_vecOrigin[2]");
+        if (pXYProp && pZProp) {
+            p = Point(pXYProp->m_pPropValue->m_value.m_vector.x,
+                      pXYProp->m_pPropValue->m_value.m_vector.y,
+                      pZProp->m_pPropValue->m_value.m_float);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool ShowPlayerInfo(json_spirit::wmObject &event,
                     const char *pField,
                     int nIndex,
@@ -635,6 +676,7 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                         printf("%s\n{\n", pDescriptor->name().c_str());
                 }
                 int numKeys = msg.keys().size();
+                int killer = -1, dead = -1;
                 for (int i = 0; i < numKeys; i++) {
                     const CSVCMsg_GameEventList::key_t &Key = pDescriptor->keys(i);
                     const CSVCMsg_GameEvent::key_t &KeyValue = msg.keys(i);
@@ -644,6 +686,12 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                         if (Key.name().compare("userid") == 0 ||
                             Key.name().compare("attacker") == 0 ||
                             Key.name().compare("assister") == 0) {
+                            if (pDescriptor->name().compare("player_death") == 0) {
+                                if (Key.name().compare("userid") == 0)
+                                    dead = KeyValue.val_short();
+                                else if (Key.name().compare("attacker") == 0)
+                                    killer = KeyValue.val_short();
+                            }
                             bHandled =
                                 ShowPlayerInfo(event, Key.name().c_str(), KeyValue.val_short(),
                                                g_bShowExtraPlayerInfoInGameEvents);
@@ -678,6 +726,20 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                         }
                     }
                 }
+                if (pDescriptor->name().compare("player_death") == 0) {
+                    Point killerp, deadp;
+                    if (killer && getPlayerPosition(dead, deadp) &&
+                        getPlayerPosition(killer, killerp)) {
+                        if (throughSmoke(killerp, deadp)) {
+                            event[L"smoke"] = true;
+                            //                             std::cerr << "through smoke " <<
+                            //                             s_nCurrentTick << " " <<
+                            //                             FindPlayerInfo(killer)->name  << " x " <<
+                            //                             FindPlayerInfo(dead)->name << std::endl;
+                        }
+                    }
+                }
+
                 if (g_bDumpGameEvents) {
                     if (g_bDumpJson)
                         addEvent(event);
