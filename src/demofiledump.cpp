@@ -56,7 +56,7 @@ static std::vector<ExcludeEntry> s_currentExcludes;
 static std::vector<EntityEntry *> s_Entities;
 static std::vector<player_info_t> s_PlayerInfos;
 static std::map<int, player_info_t> userid_info;
-enum {DT_CSPlayer = 0, DT_CSGameRulesProxy = 1, DT_CSTeam = 2};
+enum { DT_CSPlayer = 0, DT_CSGameRulesProxy = 1, DT_CSTeam = 2 };
 int playerCoordIndex, playerCoordIndex2;
 int serverClassesIds[3];
 
@@ -117,16 +117,23 @@ std::map<uint64_t, int> bot_takeover;
 // Map entityid to Point
 std::map<int, Point> smokes;
 
-bool throughSmoke(Point p1, Point p2) {
+json_spirit::wmArray point_to_json(const Point &p) {
+    return json_spirit::wmArray({int(p.x), int(p.y), int(p.z)});
+}
+
+void addSmokes(Point p1, Point p2, json_spirit::wmObject &event) {
+    json_spirit::wmArray tmp;
     for (auto &kv : smokes) {
         Point killer(p1.x, p1.y, p1.z + player_crouch_height);
         // Check if shooting to the legs AND head of the victim goes through smoke
         if (intersects(killer, p2, kv.second, smoke_radius, smoke_height) &&
             intersects(killer, Point(p2.x, p2.y, p2.z + player_height), kv.second, smoke_radius,
-                       smoke_height))
-            return true;
+                       smoke_height)) {
+            tmp.push_back(point_to_json(kv.second));
+        }
     }
-    return false;
+    if (!tmp.empty())
+        event[L"smoke"] = tmp;
 }
 
 static std::set<std::wstring> hsbox_events = {L"player_death",
@@ -726,13 +733,9 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                     Point killerp, deadp;
                     if (killer && getPlayerPosition(dead, deadp) &&
                         getPlayerPosition(killer, killerp)) {
-                        if (throughSmoke(killerp, deadp)) {
-                            event[L"smoke"] = true;
-                            //                             std::cerr << "through smoke " <<
-                            //                             s_nCurrentTick << " " <<
-                            //                             FindPlayerInfo(killer)->name  << " x " <<
-                            //                             FindPlayerInfo(dead)->name << std::endl;
-                        }
+                        event[L"attacker_pos"] = point_to_json(killerp);
+                        event[L"victim_pos"] = point_to_json(deadp);
+                        addSmokes(killerp, deadp, event);
                     }
                 }
 
@@ -1255,8 +1258,8 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
                 bool team = pEntity->m_uClass == serverClassesIds[DT_CSTeam];
                 bool gamerules = pEntity->m_uClass == serverClassesIds[DT_CSGameRulesProxy];
                 bool player = pEntity->m_uClass == serverClassesIds[DT_CSPlayer];
-                if ((team || gamerules ||
-                     (player && (playerCoordIndex == fieldIndices[i] || playerCoordIndex2 == fieldIndices[i])))) {
+                if ((team || gamerules || (player && (playerCoordIndex == fieldIndices[i] ||
+                                                      playerCoordIndex2 == fieldIndices[i])))) {
                     Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
                                                fieldIndices[i], !g_bDumpPacketEntities);
                     pEntity->AddOrUpdateProp(pSendProp, pProp);
