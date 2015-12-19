@@ -1223,7 +1223,8 @@ void handleTeamProp(uint32 entity_id, const std::string &key, const Prop_t &valu
 bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
     bool bNewWay = (entityBitBuffer.ReadOneBit() == 1); // 0 = old way, 1 = new way
 
-    std::vector<int> fieldIndices;
+    static std::vector<int> fieldIndices(5000);
+    fieldIndices.clear();
 
     int index = -1;
     do {
