@@ -56,6 +56,9 @@ static std::vector<ExcludeEntry> s_currentExcludes;
 static std::vector<EntityEntry *> s_Entities;
 static std::vector<player_info_t> s_PlayerInfos;
 static std::map<int, player_info_t> userid_info;
+std::set<std::string>
+    interesting_server_classes({"DT_CSGameRulesProxy", "DT_CSPlayer", "DT_CSTeam"});
+std::map<std::string, int> server_classes_ids;
 
 extern bool g_bDumpJson;
 extern bool g_bPrettyJson;
@@ -1241,19 +1244,34 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
     if (g_bDumpPacketEntities) {
         printf("Table: %s\n", pTable->net_table_name().c_str());
     }
-    bool team = pTable->net_table_name() == "DT_CSTeam";
-    bool gamerules = pTable->net_table_name() == "DT_CSGameRulesProxy";
+
     for (unsigned int i = 0; i < fieldIndices.size(); i++) {
         FlattenedPropEntry *pSendProp = GetSendPropByIndex(pEntity->m_uClass, fieldIndices[i]);
         if (pSendProp) {
-            Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
-                                       fieldIndices[i], !g_bDumpPacketEntities);
-            pEntity->AddOrUpdateProp(pSendProp, pProp);
-            if (team) {
-                handleTeamProp(pEntity->m_uSerialNum, pSendProp->m_prop->var_name(), *pProp);
-            } else if (gamerules && pSendProp->m_prop->var_name() == "m_bGameRestart" &&
-                       pProp->m_value.m_int) {
-                addEvent({{L"type", L"game_restart"}, {L"tick", s_nCurrentTick}});
+            // for -hsbox update only the entities and properties we need
+            if (g_bOnlyHsBoxEvents) {
+                bool team = pEntity->m_uClass == server_classes_ids["DT_CSTeam"];
+                bool gamerules = pEntity->m_uClass == server_classes_ids["DT_CSGameRulesProxy"];
+                bool player = pEntity->m_uClass == server_classes_ids["DT_CSPlayer"];
+                if ((team || gamerules ||
+                     (player && (!pSendProp->m_prop->var_name().compare(0, 11, "m_vecOrigin"))))) {
+                    Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
+                                               fieldIndices[i], !g_bDumpPacketEntities);
+                    pEntity->AddOrUpdateProp(pSendProp, pProp);
+                    if (team) {
+                        handleTeamProp(pEntity->m_uSerialNum, pSendProp->m_prop->var_name(),
+                                       *pProp);
+                    } else if (gamerules && pSendProp->m_prop->var_name() == "m_bGameRestart" &&
+                               pProp->m_value.m_int) {
+                        addEvent({{L"type", L"game_restart"}, {L"tick", s_nCurrentTick}});
+                    }
+                } else
+                    DecodePropFake(entityBitBuffer, pSendProp, pEntity->m_uClass, fieldIndices[i],
+                                   !g_bDumpPacketEntities);
+            } else {
+                Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
+                                           fieldIndices[i], !g_bDumpPacketEntities);
+                pEntity->AddOrUpdateProp(pSendProp, pProp);
             }
         } else {
             return false;
@@ -1599,6 +1617,8 @@ bool ParseDataTable(CBitRead &buf) {
                    entry.nDataTable);
         }
         s_ServerClasses.push_back(entry);
+        if (g_bOnlyHsBoxEvents && interesting_server_classes.count(entry.strDTName))
+            server_classes_ids[entry.strDTName] = entry.nClassID;
     }
 
     if (g_bDumpDataTables) {

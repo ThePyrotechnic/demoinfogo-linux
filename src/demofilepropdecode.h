@@ -146,5 +146,6 @@ struct Prop_t
 struct FlattenedPropEntry;
 
 Prop_t *DecodeProp( CBitRead &entityBitBuffer, FlattenedPropEntry *pFlattenedProp, uint32 uClass, int nFieldIndex, bool bQuiet );
+void DecodePropFake( CBitRead &entityBitBuffer, FlattenedPropEntry *pFlattenedProp, uint32 uClass, int nFieldIndex, bool bQuiet );
 
 #endif

@@ -270,3 +270,42 @@ Prop_t *DecodeProp(CBitRead &entityBitBuffer,
 
     return pResult;
 }
+
+void DecodePropFake(CBitRead &entityBitBuffer,
+                    FlattenedPropEntry *pFlattenedProp,
+                    uint32 uClass,
+                    int nFieldIndex,
+                    bool bQuiet) {
+    const CSVCMsg_SendTable::sendprop_t *pSendProp = pFlattenedProp->m_prop;
+    static Vector tmpvec;
+
+    if (!bQuiet) {
+        printf("Field: %d, %s = ", nFieldIndex, pSendProp->var_name().c_str());
+    }
+    switch (pSendProp->type()) {
+    case DPT_Int:
+        Int_Decode(entityBitBuffer, pSendProp);
+        break;
+    case DPT_Float:
+        Float_Decode(entityBitBuffer, pSendProp);
+        break;
+    case DPT_Vector:
+        Vector_Decode(entityBitBuffer, pSendProp, tmpvec);
+        break;
+    case DPT_VectorXY:
+        VectorXY_Decode(entityBitBuffer, pSendProp, tmpvec);
+        break;
+    case DPT_String:
+        String_Decode(entityBitBuffer, pSendProp);
+        break;
+    case DPT_Array:
+        Array_Decode(entityBitBuffer, pFlattenedProp, pSendProp->num_elements(), uClass,
+                     nFieldIndex, bQuiet);
+        break;
+    case DPT_DataTable:
+        break;
+    case DPT_Int64:
+        Int64_Decode(entityBitBuffer, pSendProp);
+        break;
+    }
+}
