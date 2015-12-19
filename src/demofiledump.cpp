@@ -57,6 +57,7 @@ static std::vector<EntityEntry *> s_Entities;
 static std::vector<player_info_t> s_PlayerInfos;
 static std::map<int, player_info_t> userid_info;
 enum {DT_CSPlayer = 0, DT_CSGameRulesProxy = 1, DT_CSTeam = 2};
+int playerCoordIndex, playerCoordIndex2;
 int serverClassesIds[3];
 
 extern bool g_bDumpJson;
@@ -1147,6 +1148,14 @@ void FlattenDataTable(int nServerClass) {
                 break;
         }
     }
+
+    if (nServerClass == serverClassesIds[DT_CSPlayer]) {
+        for (size_t i = 0; i < flattenedProps.size(); ++i)
+            if (flattenedProps[i].m_prop->var_name() == "m_vecOrigin")
+                playerCoordIndex = i;
+            else if (flattenedProps[i].m_prop->var_name() == "m_vecOrigin[2]")
+                playerCoordIndex2 = i;
+    }
 }
 
 int ReadFieldIndex(CBitRead &entityBitBuffer, int lastIndex, bool bNewWay) {
@@ -1247,7 +1256,7 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
                 bool gamerules = pEntity->m_uClass == serverClassesIds[DT_CSGameRulesProxy];
                 bool player = pEntity->m_uClass == serverClassesIds[DT_CSPlayer];
                 if ((team || gamerules ||
-                     (player && (!pSendProp->m_prop->var_name().compare(0, 11, "m_vecOrigin"))))) {
+                     (player && (playerCoordIndex == fieldIndices[i] || playerCoordIndex2 == fieldIndices[i])))) {
                     Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
                                                fieldIndices[i], !g_bDumpPacketEntities);
                     pEntity->AddOrUpdateProp(pSendProp, pProp);
