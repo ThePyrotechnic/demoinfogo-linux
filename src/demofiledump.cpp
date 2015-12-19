@@ -193,20 +193,13 @@ bool CDemoFileDump::Open(const char *filename) {
     return true;
 }
 
-void CDemoFileDump::MsgPrintf(const ::google::protobuf::Message &msg,
-                              int size,
-                              const char *fmt,
-                              ...) {
+void CDemoFileDump::MsgPrintf(const ::google::protobuf::Message &msg, int size) {
     if (g_bDumpNetMessages && !g_bDumpJson) {
-        va_list vlist;
         const std::string &TypeName = msg.GetTypeName();
 
         // Print the message type and size
-        printf("---- %s (%d bytes) -----------------\n", TypeName.c_str(), size);
-
-        va_start(vlist, fmt);
-        vprintf(fmt, vlist);
-        va_end(vlist);
+        printf("---- %s (%d bytes) -----------------\n%s", TypeName.c_str(), size,
+               msg.DebugString().c_str());
     }
 }
 
@@ -215,7 +208,7 @@ void PrintUserMessage(CDemoFileDump &Demo, const void *parseBuffer, int BufferSi
     T msg;
 
     if (msg.ParseFromArray(parseBuffer, BufferSize)) {
-        Demo.MsgPrintf(msg, BufferSize, "%s", msg.DebugString().c_str());
+        Demo.MsgPrintf(msg, BufferSize);
     }
 }
 
@@ -243,7 +236,7 @@ void PrintUserMessage<CCSUsrMsg_ServerRankUpdate, CS_UM_ServerRankUpdate>(CDemoF
                 }
             }
         } else
-            Demo.MsgPrintf(msg, BufferSize, "%s", msg.DebugString().c_str());
+            Demo.MsgPrintf(msg, BufferSize);
     } else {
     }
 }
@@ -328,7 +321,7 @@ void PrintNetMessage(CDemoFileDump &Demo, const void *parseBuffer, int BufferSiz
         if (msgType == svc_GameEventList) {
             Demo.m_GameEventList.CopyFrom(msg);
         }
-        Demo.MsgPrintf(msg, BufferSize, "%s", msg.DebugString().c_str());
+        Demo.MsgPrintf(msg, BufferSize);
     }
 }
 

@@ -226,7 +226,7 @@ public:
 public:
 	void DumpDemoPacket( CBitRead &buf, int length );
 	void DumpUserMessage( const void *parseBuffer, int BufferSize );
-	void MsgPrintf( const ::google::protobuf::Message& msg, int size, const char *fmt, ... );
+	void MsgPrintf(const ::google::protobuf::Message& msg, int size);
 
 public:
 	CDemoFile m_demofile;
