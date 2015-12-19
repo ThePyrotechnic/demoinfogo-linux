@@ -56,9 +56,8 @@ static std::vector<ExcludeEntry> s_currentExcludes;
 static std::vector<EntityEntry *> s_Entities;
 static std::vector<player_info_t> s_PlayerInfos;
 static std::map<int, player_info_t> userid_info;
-std::set<std::string>
-    interesting_server_classes({"DT_CSGameRulesProxy", "DT_CSPlayer", "DT_CSTeam"});
-std::map<std::string, int> server_classes_ids;
+enum {DT_CSPlayer = 0, DT_CSGameRulesProxy = 1, DT_CSTeam = 2};
+int serverClassesIds[3];
 
 extern bool g_bDumpJson;
 extern bool g_bPrettyJson;
@@ -1244,9 +1243,9 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
         if (pSendProp) {
             // for -hsbox update only the entities and properties we need
             if (g_bOnlyHsBoxEvents) {
-                bool team = pEntity->m_uClass == server_classes_ids["DT_CSTeam"];
-                bool gamerules = pEntity->m_uClass == server_classes_ids["DT_CSGameRulesProxy"];
-                bool player = pEntity->m_uClass == server_classes_ids["DT_CSPlayer"];
+                bool team = pEntity->m_uClass == serverClassesIds[DT_CSTeam];
+                bool gamerules = pEntity->m_uClass == serverClassesIds[DT_CSGameRulesProxy];
+                bool player = pEntity->m_uClass == serverClassesIds[DT_CSPlayer];
                 if ((team || gamerules ||
                      (player && (!pSendProp->m_prop->var_name().compare(0, 11, "m_vecOrigin"))))) {
                     Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
@@ -1611,8 +1610,14 @@ bool ParseDataTable(CBitRead &buf) {
                    entry.nDataTable);
         }
         s_ServerClasses.push_back(entry);
-        if (g_bOnlyHsBoxEvents && interesting_server_classes.count(entry.strDTName))
-            server_classes_ids[entry.strDTName] = entry.nClassID;
+        if (g_bOnlyHsBoxEvents) {
+            if (!strcmp(entry.strDTName, "DT_CSPlayer"))
+                serverClassesIds[DT_CSPlayer] = entry.nClassID;
+            else if (!strcmp(entry.strDTName, "DT_CSTeam"))
+                serverClassesIds[DT_CSTeam] = entry.nClassID;
+            else if (!strcmp(entry.strDTName, "DT_CSGameRulesProxy"))
+                serverClassesIds[DT_CSGameRulesProxy] = entry.nClassID;
+        }
     }
 
     if (g_bDumpDataTables) {
