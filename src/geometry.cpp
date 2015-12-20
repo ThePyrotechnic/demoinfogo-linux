@@ -31,15 +31,15 @@ bool intersects(Point line1, Point line2, Point center, double radius, double he
         t1 = tmp;
     }
 
-    float y0 = start.z + t0 * direction.z;
-    float y1 = start.z + t1 * direction.z;
+    double y0 = start.z + t0 * direction.z;
+    double y1 = start.z + t1 * direction.z;
 
     if (y0 < -1) {
         if (y1 < -1)
             return false;
         else {
             // hit the cap
-            float th = t0 + (t1 - t0) * (y0 + 1) / (y0 - y1);
+            double th = t0 + (t1 - t0) * (y0 + 1) / (y0 - y1);
             if (th <= -epsilon)
                 return false;
             return true;
@@ -57,7 +57,7 @@ bool intersects(Point line1, Point line2, Point center, double radius, double he
             return false;
         else {
             // hit the cap
-            float th = t0 + (t1 - t0) * (y0 - 1) / (y0 - y1);
+            double th = t0 + (t1 - t0) * (y0 - 1) / (y0 - y1);
             if (th <= 0)
                 return false;
             return true;
