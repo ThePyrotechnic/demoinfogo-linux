@@ -27,8 +27,6 @@
 #include <string>
 #include <set>
 #include <unordered_map>
-#include <locale>
-#include <codecvt>
 #include <json_spirit.h>
 #include "demofile.h"
 #include "demofiledump.h"
@@ -43,6 +41,12 @@
 #if defined(_WIN32) || defined(_WIN64)
 #include <io.h>
 #include <fcntl.h>
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+#include <locale>
+#include <codecvt>
+#else
+#include "utf8.h"
 #endif
 
 // file globals
@@ -82,7 +86,13 @@ player_info_t *FindPlayerInfo(int userId);
 int FindPlayerEntityIndex(int userId);
 
 std::wstring toWide(const std::string &s) {
+#if defined(_WIN32) || defined(_WIN64)
     return std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(s);
+#else
+    std::wstring r;
+    utf8::utf8to32(s.begin(), s.end(), std::back_inserter(r));
+    return r;
+#endif
 }
 
 void addUserId(const player_info_t &playerInfo) {
