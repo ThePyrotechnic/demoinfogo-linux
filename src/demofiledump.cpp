@@ -153,6 +153,7 @@ static std::set<std::wstring> hsbox_events = {L"player_death",
                                               L"game_restart",
                                               L"score_changed",
                                               L"player_hurt",
+                                              L"bomb_defused",
                                               L"round_officially_ended"};
 
 void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &object_) {
