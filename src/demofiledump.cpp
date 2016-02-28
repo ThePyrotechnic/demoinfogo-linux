@@ -60,6 +60,8 @@ static std::vector<ExcludeEntry> s_currentExcludes;
 static std::vector<EntityEntry *> s_Entities;
 static std::vector<player_info_t> s_PlayerInfos;
 static std::map<int, player_info_t> userid_info;
+// map xuid to player slot
+static std::map<uint64, int> player_slot;
 enum { DT_CSPlayer = 0, DT_CSGameRulesProxy = 1, DT_CSTeam = 2 };
 int playerCoordIndex, playerCoordIndex2;
 int serverClassesIds[3];
@@ -99,6 +101,13 @@ void addUserId(const player_info_t &playerInfo) {
     userid_info[playerInfo.userID] = playerInfo;
     if (!playerInfo.fakeplayer && !playerInfo.ishltv)
         player_names[std::to_wstring(playerInfo.xuid)] = toWide(playerInfo.name);
+    if (!playerInfo.fakeplayer) {
+        for (int i = 0; i < s_PlayerInfos.size(); ++i)
+            if (s_PlayerInfos[i].userID == playerInfo.userID) {
+                player_slot[playerInfo.xuid] = i;
+                break;
+            }
+    }
 }
 
 uint64 guid2xuid(std::string guid) {
@@ -1847,12 +1856,17 @@ void CDemoFileDump::DoDump() {
         match[L"servername"] = toWide(m_demofile.m_DemoHeader.servername);
         match[L"player_names"] = player_names;
         json_spirit::wmArray gotv_bots;
-        for (auto &kv : userid_info)
+        for (const auto &kv : userid_info)
             if (kv.second.ishltv)
                 gotv_bots.push_back(toWide(kv.second.name));
         match[L"gotv_bots"] = gotv_bots;
         if (!mm_rank_update.empty())
             match[L"mm_rank_update"] = mm_rank_update;
+
+        json_spirit::wmObject uids;
+        for (const auto &kv: player_slot)
+            uids[std::to_wstring(kv.first)] = kv.second;
+        match[L"player_slots"] = uids;
 
         int options = 0;
         if (g_bPrettyJson)
