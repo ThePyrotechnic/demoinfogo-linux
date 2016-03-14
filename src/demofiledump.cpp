@@ -163,6 +163,7 @@ static std::set<std::wstring> hsbox_events = {L"player_death",
                                               L"score_changed",
                                               L"player_hurt",
                                               L"bomb_defused",
+                                              L"player_disconnected",
                                               L"round_officially_ended"};
 
 void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &object_) {
@@ -197,6 +198,14 @@ void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &o
         (g_bOnlyHsBoxEvents && hsbox_events.count(object.at(L"type").get_str())))
         events.push_back(object);
 }
+
+uint64 getXuid(int userid) {
+    player_info_t *pPlayerInfo = FindPlayerInfo(userid);
+    if (pPlayerInfo && !pPlayerInfo->fakeplayer)
+        return pPlayerInfo->xuid;
+    return userid;
+}
+
 
 void fatal_errorf(const char *fmt, ...) {
     va_list vlist;
@@ -466,10 +475,11 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
         if (bPlayerDisconnect) {
             if (g_bDumpGameEvents) {
                 if (g_bDumpJson)
-                    addEvent({{L"type", L"disconnect"},
+                    addEvent({{L"type", L"player_disconnected"},
                               {L"name", toWide(name)},
+                              {L"tick", s_nCurrentTick},
                               {L"reason", toWide(reason)},
-                              {L"userid", userid}});
+                              {L"userid", getXuid(userid)}});
                 else
                     printf("Player %s (id:%d) disconnected. reason:%s\n", name, userid, reason);
             }
