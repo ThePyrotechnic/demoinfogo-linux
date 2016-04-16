@@ -1267,11 +1267,18 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
     static std::vector<int> fieldIndices(5000);
     fieldIndices.clear();
 
+    int steps = 0;
     int index = -1;
     do {
         index = ReadFieldIndex(entityBitBuffer, index, bNewWay);
         if (index != -1) {
             fieldIndices.push_back(index);
+        }
+        // Sometimes this loop never ends: demo is probably corrupted
+        // Hoping valid packets never get to 20000 indices
+        if (++steps > 20000) {
+            fprintf(stderr, "Corrupted demo\n");
+            exit(1);
         }
     } while (index != -1);
 
@@ -1419,7 +1426,7 @@ void PrintNetMessage<CSVCMsg_PacketEntities, svc_PacketEntities>(CDemoFileDump &
                     }
                     EntityEntry *pEntity = AddEntity(nNewEntity, uClass, uSerialNum);
                     if (!ReadNewEntity(entityBitBuffer, pEntity)) {
-                        printf("*****Error reading entity! Bailing on this PacketEntities!\n");
+                        fprintf(stderr, "*****Error reading entity! Bailing on this PacketEntities!\n");
                         return;
                     }
                 } break;
@@ -1450,7 +1457,7 @@ void PrintNetMessage<CSVCMsg_PacketEntities, svc_PacketEntities>(CDemoFileDump &
                                    pEntity->m_nEntity, pEntity->m_uClass, pEntity->m_uSerialNum);
                         }
                         if (!ReadNewEntity(entityBitBuffer, pEntity)) {
-                            printf("*****Error reading entity! Bailing on this PacketEntities!\n");
+                            fprintf(stderr, "*****Error reading entity! Bailing on this PacketEntities!\n");
                             return;
                         }
                     } else {
