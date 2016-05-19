@@ -114,7 +114,7 @@ struct Prop_t
 				}
 				break;
 			case DPT_Array:
-				break;
+                        case DPT_NUMSendPropTypes:
 			case DPT_DataTable:
 				break;
 			case DPT_Int64:

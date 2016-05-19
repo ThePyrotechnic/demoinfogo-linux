@@ -914,7 +914,8 @@ void ParseStringTableUpdate(CBitRead &buf,
             }
         } else {
             if (g_bDumpStringTables) {
-                printf(" %d, %s, %d, %s \n", entryIndex, pEntry, nBytes, pUserData);
+                printf(" %d, %s, %d, %s \n", entryIndex, pEntry, nBytes,
+                       static_cast<const char *>(pUserData));
             }
         }
 
@@ -1410,7 +1411,8 @@ void PrintNetMessage<CSVCMsg_PacketEntities, svc_PacketEntities>(CDemoFileDump &
                     }
                     EntityEntry *pEntity = AddEntity(nNewEntity, uClass, uSerialNum);
                     if (!ReadNewEntity(entityBitBuffer, pEntity)) {
-                        fprintf(stderr, "*****Error reading entity! Bailing on this PacketEntities!\n");
+                        fprintf(stderr,
+                                "*****Error reading entity! Bailing on this PacketEntities!\n");
                         return;
                     }
                 } break;
@@ -1441,7 +1443,8 @@ void PrintNetMessage<CSVCMsg_PacketEntities, svc_PacketEntities>(CDemoFileDump &
                                    pEntity->m_nEntity, pEntity->m_uClass, pEntity->m_uSerialNum);
                         }
                         if (!ReadNewEntity(entityBitBuffer, pEntity)) {
-                            fprintf(stderr, "*****Error reading entity! Bailing on this PacketEntities!\n");
+                            fprintf(stderr,
+                                    "*****Error reading entity! Bailing on this PacketEntities!\n");
                             return;
                         }
                     } else {
@@ -1873,7 +1876,7 @@ void CDemoFileDump::DoDump() {
             match[L"mm_rank_update"] = mm_rank_update;
 
         json_spirit::wmObject uids;
-        for (const auto &kv: player_slot)
+        for (const auto &kv : player_slot)
             uids[std::to_wstring(kv.first)] = kv.second;
         match[L"player_slots"] = uids;
 
