@@ -84,8 +84,8 @@ static int s_nCurrentTick;
 json_spirit::wmObject player_names;
 
 EntityEntry *FindEntity(int nEntity);
+player_info_t *FindPlayerByEntity(int entityID);
 player_info_t *FindPlayerInfo(int userId);
-int FindPlayerEntityIndex(int userId);
 
 std::wstring toWide(const std::string &s) {
 #if defined(_WIN32) || defined(_WIN64)
@@ -99,14 +99,9 @@ std::wstring toWide(const std::string &s) {
 
 void addUserId(const player_info_t &playerInfo) {
     userid_info[playerInfo.userID] = playerInfo;
-    if (!playerInfo.fakeplayer && !playerInfo.ishltv)
+    if (!playerInfo.fakeplayer && !playerInfo.ishltv) {
         player_names[std::to_wstring(playerInfo.xuid)] = toWide(playerInfo.name);
-    if (!playerInfo.fakeplayer) {
-        for (int i = 0; i < s_PlayerInfos.size(); ++i)
-            if (s_PlayerInfos[i].userID == playerInfo.userID) {
-                player_slot[playerInfo.xuid] = i;
-                break;
-            }
+        player_slot[playerInfo.xuid] = playerInfo.entityID;
     }
 }
 
@@ -205,7 +200,6 @@ uint64 getXuid(int userid) {
         return pPlayerInfo->xuid;
     return userid;
 }
-
 
 void fatal_errorf(const char *fmt, ...) {
     va_list vlist;
@@ -392,25 +386,18 @@ player_info_t *FindPlayerInfo(int userId) {
         }
     }
 
-    try {
-        return &userid_info.at(userId);
-    } catch (...) {
-    }
-
     return NULL;
 }
 
-int FindPlayerEntityIndex(int userId) {
-    int nIndex = 0;
-    for (std::vector<player_info_t>::iterator i = s_PlayerInfos.begin(); i != s_PlayerInfos.end();
-         i++) {
-        if (i->userID == userId) {
-            return nIndex;
+player_info_t *FindPlayerByEntity(int entityId) {
+    for (std::vector<player_info_t>::iterator j = s_PlayerInfos.begin(); j != s_PlayerInfos.end();
+         j++) {
+        if (j->entityID == entityId) {
+            return &(*j);
         }
-        nIndex++;
     }
 
-    return -1;
+    return NULL;
 }
 
 const CSVCMsg_GameEventList::descriptor_t *GetGameEventDescriptor(const CSVCMsg_GameEvent &msg,
@@ -506,22 +493,12 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
                 newPlayer.xuid = guid2xuid(guid);
             }
 
+            newPlayer.entityID = index;
             addUserId(newPlayer);
+            auto existing = FindPlayerByEntity(index);
 
-            if (index < s_PlayerInfos.size()) {
-                // only replace existing player slot if the userID is different (very unlikely)
-                if (s_PlayerInfos[index].userID != userid) {
-                    if (!g_bDumpJson) {
-                        printf("userid %d index %d\n", userid, index);
-                        printf("Player %s %s %ld (id:%d) replaced with Player %s %s %ld (id:%d).\n",
-                               s_PlayerInfos[index].guid, s_PlayerInfos[index].name,
-                               s_PlayerInfos[index].xuid, s_PlayerInfos[index].userID,
-                               newPlayer.guid, newPlayer.name, newPlayer.xuid, newPlayer.userID);
-                    }
-                    if (std::string(s_PlayerInfos[index].name).compare(name) != 0)
-                        s_PlayerInfos[index] = newPlayer;
-                }
-            } else {
+            // add entity if it doesn't exist, update if it does
+            if (!existing) {
                 if (g_bDumpGameEvents) {
                     if (g_bDumpJson)
                         addEvent({{L"type", L"connect"},
@@ -532,6 +509,13 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
                         printf("Player %s %s (id:%d) connected.\n", newPlayer.guid, name, userid);
                 }
                 s_PlayerInfos.push_back(newPlayer);
+            } else {
+                if (!g_bDumpJson) {
+                    printf("Player %s %s %ld (id:%d) replaced with Player %s %s %ld (id:%d).\n",
+                           existing->guid, existing->name, existing->xuid, existing->userID,
+                           newPlayer.guid, newPlayer.name, newPlayer.xuid, newPlayer.userID);
+                }
+                *existing = newPlayer;
             }
         }
         return true;
@@ -539,9 +523,11 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
     return false;
 }
 
-bool getPlayerPosition(int nIndex, Point &p) {
-    int nEntityIndex = FindPlayerEntityIndex(nIndex) + 1;
-    EntityEntry *pEntity = FindEntity(nEntityIndex);
+bool getPlayerPosition(int userid, Point &p) {
+    player_info_t *pInfo = FindPlayerInfo(userid);
+    if (!pInfo)
+        return false;
+    EntityEntry *pEntity = FindEntity(pInfo->entityID + 1);
     if (pEntity) {
         PropEntry *pXYProp = pEntity->FindProp("m_vecOrigin");
         PropEntry *pZProp = pEntity->FindProp("m_vecOrigin[2]");
@@ -588,7 +574,7 @@ bool ShowPlayerInfo(json_spirit::wmObject &event,
         }
 
         if (bShowDetails) {
-            int nEntityIndex = FindPlayerEntityIndex(nIndex) + 1;
+            int nEntityIndex = pPlayerInfo->entityID + 1;
             EntityEntry *pEntity = FindEntity(nEntityIndex);
             if (pEntity) {
                 PropEntry *pXYProp = pEntity->FindProp("m_vecOrigin");
@@ -900,23 +886,21 @@ void ParseStringTableUpdate(CBitRead &buf,
         if (bIsUserInfo && pUserData != NULL) {
             const player_info_t *pUnswappedPlayerInfo = (const player_info_t *)pUserData;
             player_info_t playerInfo = *pUnswappedPlayerInfo;
+            playerInfo.entityID = entryIndex;
 
             LowLevelByteSwap(&playerInfo.xuid, &pUnswappedPlayerInfo->xuid);
             LowLevelByteSwap(&playerInfo.userID, &pUnswappedPlayerInfo->userID);
             LowLevelByteSwap(&playerInfo.friendsID, &pUnswappedPlayerInfo->friendsID);
 
             bool bAdded = false;
-            if ((unsigned int)entryIndex < s_PlayerInfos.size()) {
-                if (!g_bDumpJson)
-                    printf("Player %s %s (id:%d) replaced2 with Player %s %s (id:%d).\n",
-                           s_PlayerInfos[entryIndex].guid, s_PlayerInfos[entryIndex].name,
-                           s_PlayerInfos[entryIndex].userID, playerInfo.guid, playerInfo.name,
-                           playerInfo.userID);
-                s_PlayerInfos[entryIndex] = playerInfo;
-            } else {
+            auto existing = FindPlayerByEntity(entryIndex);
+            if (!existing) {
                 bAdded = true;
                 s_PlayerInfos.push_back(playerInfo);
+            } else {
+                *existing = playerInfo;
             }
+
             addUserId(playerInfo);
 
             if (g_bDumpStringTables) {
@@ -1721,21 +1705,29 @@ bool DumpStringTable(CBitRead &buf, bool bIsUserInfo) {
             if (bIsUserInfo && data != NULL) {
                 const player_info_t *pUnswappedPlayerInfo = (const player_info_t *)data;
                 player_info_t playerInfo = *pUnswappedPlayerInfo;
+                playerInfo.entityID = i;
 
                 LowLevelByteSwap(&playerInfo.xuid, &pUnswappedPlayerInfo->xuid);
                 LowLevelByteSwap(&playerInfo.userID, &pUnswappedPlayerInfo->userID);
                 LowLevelByteSwap(&playerInfo.friendsID, &pUnswappedPlayerInfo->friendsID);
 
-                if (g_bDumpStringTables) {
-                    printf("adding:player info:\n xuid:%" PRId64
-                           "\n name:%s\n userID:%d\n guid:%s\n friendsID:%d\n friendsName:%s\n "
-                           "fakeplayer:%d\n ishltv:%d\n filesDownloaded:%d\n",
-                           playerInfo.xuid, playerInfo.name, playerInfo.userID, playerInfo.guid,
-                           playerInfo.friendsID, playerInfo.friendsName, playerInfo.fakeplayer,
-                           playerInfo.ishltv, playerInfo.filesDownloaded);
+                // shouldn't ever exist, but just incase
+                auto existing = FindPlayerByEntity(i);
+                if (!existing) {
+                    if (g_bDumpStringTables) {
+                        printf("adding:player entity:%d info:\n xuid:%lu\n name:%s\n userID:%d\n "
+                               "guid:%s\n friendsID:%d\n friendsName:%s\n fakeplayer:%d\n "
+                               "ishltv:%d\n filesDownloaded:%d\n",
+                               i, playerInfo.xuid, playerInfo.name, playerInfo.userID,
+                               playerInfo.guid, playerInfo.friendsID, playerInfo.friendsName,
+                               playerInfo.fakeplayer, playerInfo.ishltv,
+                               playerInfo.filesDownloaded);
+                    }
+                    s_PlayerInfos.push_back(playerInfo);
+                } else {
+                    *existing = playerInfo;
                 }
 
-                s_PlayerInfos.push_back(playerInfo);
                 addUserId(playerInfo);
             } else {
                 if (g_bDumpStringTables) {
