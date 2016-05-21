@@ -46,6 +46,7 @@ int main(int argc, char *argv[]) {
         printf("demoinfogo filename.dem\n");
         printf("optional arguments:\n"
                " -json          Dump as json.\n"
+               " -pretty        When -json, pretty print.\n"
                " -hsbox         Dump only headshotbox events.\n"
                " -gameevents    Dump out game events.\n"
                " -nofootsteps   Skip footstep events when dumping out game events.\n"
