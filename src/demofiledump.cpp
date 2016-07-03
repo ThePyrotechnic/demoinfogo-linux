@@ -88,13 +88,17 @@ player_info_t *FindPlayerByEntity(int entityID);
 player_info_t *FindPlayerInfo(int userId);
 
 std::wstring toWide(const std::string &s) {
+    try {
 #if defined(_WIN32) || defined(_WIN64)
-    return std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(s);
+        return std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(s);
 #else
-    std::wstring r;
-    utf8::utf8to32(s.begin(), s.end(), std::back_inserter(r));
-    return r;
+        std::wstring r;
+        utf8::utf8to32(s.begin(), s.end(), std::back_inserter(r));
+        return r;
 #endif
+    } catch (...) {
+        return std::wstring();
+    }
 }
 
 void addUserId(const player_info_t &playerInfo) {
