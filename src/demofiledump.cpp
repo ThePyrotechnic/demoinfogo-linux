@@ -63,7 +63,7 @@ static std::map<int, player_info_t> userid_info;
 // map xuid to player slot
 static std::map<uint64, int> player_slot;
 enum { DT_CSPlayer = 0, DT_CSGameRulesProxy = 1, DT_CSTeam = 2 };
-int playerCoordIndex, playerCoordIndex2;
+std::set<int> playerEntityProperties;
 int serverClassesIds[3];
 
 extern bool g_bDumpJson;
@@ -126,6 +126,7 @@ std::unordered_map<int, int> id2teamno;
 Team teams[4];
 double tick_rate = -1;
 std::map<uint64_t, int> jumped_last;
+std::map<uint64_t, int> scoped_since;
 const double jump_duration = 0.75; // seconds
 const double smoke_radius = 140;
 const double player_height = 72;
@@ -174,6 +175,7 @@ void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &o
             score_snapshot = std::make_pair(teams[2].total_score, teams[3].total_score);
             bot_takeover.clear();
             smokes.clear();
+            scoped_since.clear();
         } else if (type == L"player_jump") {
             jumped_last[object.at(L"userid").get_int64()] = s_nCurrentTick;
         } else if (type == L"player_death") {
@@ -675,6 +677,27 @@ void addProperty(json_spirit::wmObject &event, const std::string &key, const T &
         std::wcout << value << " ";
 }
 
+void addPropFloat(EntityEntry *pEntity,
+                  std::string name,
+                  std::wstring key,
+                  json_spirit::wmObject &event) {
+    PropEntry *prop = pEntity->FindProp(name.c_str());
+    if (prop)
+        event[key] = prop->m_pPropValue->m_value.m_float;
+}
+
+void addKillerProps(int killer, json_spirit::wmObject &event) {
+    player_info_t *pInfo = FindPlayerInfo(killer);
+    if (!pInfo)
+        return;
+    EntityEntry *pEntity = FindEntity(pInfo->entityID + 1);
+    if (!pEntity)
+        return;
+    addPropFloat(pEntity, "m_vecVelocity[2]", L"air_velocity", event);
+    if (scoped_since.count(pInfo->xuid))
+        event[L"scoped_since"] = scoped_since[pInfo->xuid];
+}
+
 void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                     const CSVCMsg_GameEventList::descriptor_t *pDescriptor) {
     if (pDescriptor) {
@@ -751,12 +774,14 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                 }
                 if (pDescriptor->name().compare("player_death") == 0) {
                     Point killerp, deadp;
-                    if (killer && getPlayerPosition(dead, deadp) &&
+                    if (killer != -1 && getPlayerPosition(dead, deadp) &&
                         getPlayerPosition(killer, killerp)) {
                         event[L"attacker_pos"] = point_to_json(killerp);
                         event[L"victim_pos"] = point_to_json(deadp);
                         addSmokes(killerp, deadp, event);
                     }
+                    if (killer != -1)
+                        addKillerProps(killer, event);
                 }
 
                 if (g_bDumpGameEvents) {
@@ -1171,12 +1196,13 @@ void FlattenDataTable(int nServerClass) {
         }
     }
 
+    std::set<std::string> interesting({
+        "m_vecOrigin", "m_vecOrigin[2]", "m_bIsScoped", "m_vecVelocity[2]",
+    });
     if (nServerClass == serverClassesIds[DT_CSPlayer]) {
         for (size_t i = 0; i < flattenedProps.size(); ++i)
-            if (flattenedProps[i].m_prop->var_name() == "m_vecOrigin")
-                playerCoordIndex = i;
-            else if (flattenedProps[i].m_prop->var_name() == "m_vecOrigin[2]")
-                playerCoordIndex2 = i;
+            if (interesting.count(flattenedProps[i].m_prop->var_name()))
+                playerEntityProperties.insert(i);
     }
 }
 
@@ -1284,8 +1310,8 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
                 bool team = pEntity->m_uClass == serverClassesIds[DT_CSTeam];
                 bool gamerules = pEntity->m_uClass == serverClassesIds[DT_CSGameRulesProxy];
                 bool player = pEntity->m_uClass == serverClassesIds[DT_CSPlayer];
-                if ((team || gamerules || (player && (playerCoordIndex == fieldIndices[i] ||
-                                                      playerCoordIndex2 == fieldIndices[i])))) {
+                if (team || gamerules ||
+                    (player && playerEntityProperties.count(fieldIndices[i]))) {
                     Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
                                                fieldIndices[i], !g_bDumpPacketEntities);
                     pEntity->AddOrUpdateProp(pSendProp, pProp);
@@ -1295,6 +1321,14 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
                     } else if (gamerules && pSendProp->m_prop->var_name() == "m_bGameRestart" &&
                                pProp->m_value.m_int) {
                         addEvent({{L"type", L"game_restart"}, {L"tick", s_nCurrentTick}});
+                    } else if (player && pSendProp->m_prop->var_name() == "m_bIsScoped") {
+                        player_info_t *playerInfo = FindPlayerByEntity(pEntity->m_nEntity - 1);
+                        if (playerInfo) {
+                            if (pProp->m_value.m_int)
+                                scoped_since[playerInfo->xuid] = s_nCurrentTick;
+                            else
+                                scoped_since.erase(playerInfo->xuid);
+                        }
                     }
                 } else
                     DecodePropFake(entityBitBuffer, pSendProp, pEntity->m_uClass, fieldIndices[i],
