@@ -163,6 +163,7 @@ static std::set<std::wstring> hsbox_events = {L"player_death",
                                               L"score_changed",
                                               L"player_hurt",
                                               L"bomb_defused",
+                                              L"bomb_exploded",
                                               L"player_disconnected",
                                               L"round_officially_ended"};
 
