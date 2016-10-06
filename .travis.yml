@@ -1,0 +1,15 @@
+language: cpp
+
+addons:
+  apt:
+    packages:
+    - cmake
+    - libprotobuf-dev
+    - protobuf-compiler
+    - libjson-spirit-dev
+
+script:
+  - mkdir build
+  - cd build
+  - cmake .. -DRPATH=ON -DCMAKE_BUILD_TYPE=Release
+  - make
