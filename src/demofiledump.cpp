@@ -27,7 +27,7 @@
 #include <string>
 #include <set>
 #include <unordered_map>
-#include <json_spirit.h>
+#include <json_spirit_writer.h>
 #include "demofile.h"
 #include "demofiledump.h"
 #include "demofilepropdecode.h"
