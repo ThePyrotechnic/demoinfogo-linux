@@ -1,0 +1,8 @@
+install:
+   - git clone https://gitlab.com/bugdone/demoinfogo_windows_build.git
+   - move demoinfogo_windows_build/demoinfogo.vcxproj demoinfogo.vcxproj
+   - move demoinfogo_windows_build/make_cc_files.bat make_cc_files.bat
+   - move demoinfogo_windows_build/protoc.exe protoc.exe
+   - make_cc_files.bat
+
+configuration: Release
