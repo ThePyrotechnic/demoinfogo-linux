@@ -1,8 +1,11 @@
 install:
    - git clone https://gitlab.com/bugdone/demoinfogo_windows_build.git
-   - move demoinfogo_windows_build/demoinfogo.vcxproj demoinfogo.vcxproj
-   - move demoinfogo_windows_build/make_cc_files.bat make_cc_files.bat
-   - move demoinfogo_windows_build/protoc.exe protoc.exe
+   - move demoinfogo_windows_build\demoinfogo.vcxproj demoinfogo.vcxproj
+   - move demoinfogo_windows_build\make_cc_files.bat make_cc_files.bat
+   - move demoinfogo_windows_build\protoc.exe protoc.exe
    - make_cc_files.bat
 
 configuration: Release
+
+on_finish:
+  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
