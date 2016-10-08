@@ -17,4 +17,3 @@ deploy:
   file: demoinfogo-linux.zip
   on:
     repo: bugdone/demoinfogo-linux
-    tags: true
