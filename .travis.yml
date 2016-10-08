@@ -1,15 +1,15 @@
+sudo: required
+
 language: cpp
 
-addons:
-  apt:
-    packages:
-    - cmake
-    - libprotobuf-dev
-    - protobuf-compiler
-    - libjson-spirit-dev
+services:
+  - docker
+
+before_install:
+  - docker build -t demoinfogo .
+  - mkdir artifacts
+  - docker run -v ${PWD}/artifacts:/demoinfogo/build -ti demoinfogo ./docker.sh
 
 script:
-  - mkdir build
-  - cd build
-  - cmake .. -DRPATH=ON -DCMAKE_BUILD_TYPE=Release
-  - make
+  - ls artifacts/demoinfogo
+  - cd artifacts && zip -r demoinfogo-linux.zip demoinfogo libs/
