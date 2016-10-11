@@ -15,6 +15,7 @@ deploy:
   provider: GitHub
   auth_token:
     secure: d2zAm2/HZt67l+hCiNb8HLuvlknOSZnvUyyGHZ2VLwxPyU0x5OYdmSJyF7lk+mDB
+  draft: true
   on:
     branch: master
     appveyor_repo_tag: true
