@@ -1,5 +1,8 @@
 CS:GO Demos and Network Messages
 --------------------------------
+[![Build Status](https://travis-ci.org/bugdone/demoinfogo-linux.svg?branch=master)](https://travis-ci.org/bugdone/demoinfogo-linux) [![Build status](https://ci.appveyor.com/api/projects/status/exkuif8u7gc25ew2/branch/master?svg=true)](https://ci.appveyor.com/project/BugDone/demoinfogo-linux/branch/master)
+
+
 
 Demos and network messages in CS:GO use Google's Protocol Buffers (protobuf). Protobuf is a message/object serialization language that generates code to serialize the objects efficiently. For information about protobuf, see https://developers.google.com/protocol-buffers/docs/overview
 
