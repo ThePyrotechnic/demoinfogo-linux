@@ -563,6 +563,8 @@ bool ShowPlayerInfo(json_spirit::wmObject &event,
                 if (pPlayerInfo->fakeplayer)
                     event[field] = nIndex;
                 else {
+                    if (event[L"type"] == L"player_spawn")
+                        event[L"true_userid"] = nIndex;
                     event[field] = pPlayerInfo->xuid;
                     std::wstring type = event[L"type"].get_str();
                     // Ignore player_spawn as this happens before round_start (where we clear the
