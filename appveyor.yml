@@ -14,7 +14,7 @@ deploy:
   description: 'cool beans'
   provider: GitHub
   auth_token:
-    secure: d2zAm2/HZt67l+hCiNb8HLuvlknOSZnvUyyGHZ2VLwxPyU0x5OYdmSJyF7lk+mDB
+    secure: ySg6n+G/kb6nBryhjqroGm9aFTUaMQgj1AH4zTmczGHpHm4m6NcFGvTdh/wRM7/m
   draft: true
   on:
     branch: master
