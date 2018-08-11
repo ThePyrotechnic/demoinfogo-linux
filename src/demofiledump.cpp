@@ -518,7 +518,7 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
                 s_PlayerInfos.push_back(newPlayer);
             } else {
                 if (!g_bDumpJson) {
-                    printf("Player %s %s %ld (id:%d) replaced with Player %s %s %ld (id:%d).\n",
+                    printf("Player %s %s %" PRIu64 " (id:%d) replaced with Player %s %s %" PRIu64 " (id:%d).\n",
                            existing->guid, existing->name, existing->xuid, existing->userID,
                            newPlayer.guid, newPlayer.name, newPlayer.xuid, newPlayer.userID);
                 }
@@ -576,8 +576,7 @@ bool ShowPlayerInfo(json_spirit::wmObject &event,
                         event[field] = bot_takeover[pPlayerInfo->xuid];
                 }
             } else
-                printf(" %s: %s %ld (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid,
-                       nIndex);
+                printf(" %s: %s %" PRIu64 " (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid, nIndex);
         }
 
         if (bShowDetails) {
@@ -1757,7 +1756,7 @@ bool DumpStringTable(CBitRead &buf, bool bIsUserInfo) {
                 auto existing = FindPlayerByEntity(i);
                 if (!existing) {
                     if (g_bDumpStringTables) {
-                        printf("adding:player entity:%d info:\n xuid:%lu\n name:%s\n userID:%d\n "
+                        printf("adding:player entity:%d info:\n xuid:%" PRIu64 "\n name:%s\n userID:%d\n "
                                "guid:%s\n friendsID:%d\n friendsName:%s\n fakeplayer:%d\n "
                                "ishltv:%d\n filesDownloaded:%d\n",
                                i, playerInfo.xuid, playerInfo.name, playerInfo.userID,
