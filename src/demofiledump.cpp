@@ -870,6 +870,10 @@ void ParseStringTableUpdate(CBitRead &buf,
 
             if (substringcheck) {
                 int index = buf.ReadUBitLong(5);
+                if ( size_t ( index ) >= history.size() ) {
+                    printf ( "ParseStringTableUpdate: Invalid index %d, expected < %u\n", index, ( unsigned ) history.size() );
+                    exit ( -1 );
+                }
                 int bytestocopy = buf.ReadUBitLong(SUBSTRING_BITS);
                 snprintf(entry, bytestocopy + 1, "%s", history[index].string);
                 buf.ReadString(substr, sizeof(substr));
@@ -977,6 +981,9 @@ void PrintNetMessage<CSVCMsg_CreateStringTable, svc_CreateStringTable>(CDemoFile
         snprintf(s_StringTables[s_nNumStringTables].szName,
                  sizeof(s_StringTables[s_nNumStringTables].szName), "%s", msg.name().c_str());
         s_StringTables[s_nNumStringTables].nMaxEntries = msg.max_entries();
+        s_StringTables[ s_nNumStringTables ].nUserDataSize = msg.user_data_size();
+        s_StringTables[ s_nNumStringTables ].nUserDataSizeBits = msg.user_data_size_bits();
+        s_StringTables[ s_nNumStringTables ].nUserDataFixedSize = msg.user_data_fixed_size();
         s_nNumStringTables++;
     }
 }
@@ -990,16 +997,13 @@ void PrintNetMessage<CSVCMsg_UpdateStringTable, svc_UpdateStringTable>(CDemoFile
     if (msg.ParseFromArray(parseBuffer, BufferSize)) {
         CBitRead data(&msg.string_data()[0], msg.string_data().size());
 
-        if (msg.table_id() < s_nNumStringTables &&
-            s_StringTables[msg.table_id()].nMaxEntries > msg.num_changed_entries()) {
-            bool bIsUserInfo = !strcmp(s_StringTables[msg.table_id()].szName, "userinfo");
-            if (g_bDumpStringTables) {
-                printf("UpdateStringTable:%d(%s):%d:\n", msg.table_id(),
-                       s_StringTables[msg.table_id()].szName, msg.num_changed_entries());
+        if (msg.table_id() < s_nNumStringTables && s_StringTables[msg.table_id()].nMaxEntries > msg.num_changed_entries()) {
+            const StringTableData_t &table = s_StringTables[ msg.table_id() ];
+            bool bIsUserInfo = !strcmp ( table.szName, "userinfo" );
+            if ( g_bDumpStringTables ) {
+                printf ( "UpdateStringTable:%d(%s):%d:\n", msg.table_id(), table.szName, msg.num_changed_entries() );
             }
-            ParseStringTableUpdate(data, msg.num_changed_entries(),
-                                   s_StringTables[msg.table_id()].nMaxEntries, 0, 0, 0,
-                                   bIsUserInfo);
+            ParseStringTableUpdate ( data, msg.num_changed_entries(), table.nMaxEntries, table.nUserDataSize, table.nUserDataSizeBits, table.nUserDataFixedSize, bIsUserInfo );
         } else {
             printf("Bad UpdateStringTable:%d:%d!\n", msg.table_id(), msg.num_changed_entries());
         }
