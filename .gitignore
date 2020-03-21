@@ -2,6 +2,8 @@
 demoinfogo
 build
 protobuf-2.5.0
+.idea
+cmake-build-debug
 *.dem
 *.tar
 *.gz

@@ -26,10 +26,7 @@
 #include "win_stuff.h"
 
 // these settings cause it to output nothing
-bool g_bDumpJson = false;
-bool g_bPrettyJson = false;
 bool g_bDumpGameEvents = false;
-bool g_bOnlyHsBoxEvents = false;
 bool g_bSupressFootstepEvents = true;
 bool g_bShowExtraPlayerInfoInGameEvents = false;
 bool g_bDumpDeaths = false;
@@ -45,9 +42,6 @@ int main(int argc, char *argv[]) {
     if (argc <= 1) {
         printf("demoinfogo filename.dem\n");
         printf("optional arguments:\n"
-               " -json          Dump as json.\n"
-               " -pretty        When -json, pretty print.\n"
-               " -hsbox         Dump only headshotbox events.\n"
                " -gameevents    Dump out game events.\n"
                " -nofootsteps   Skip footstep events when dumping out game events.\n"
                "                Should be after -gameevents.\n"
@@ -90,12 +84,6 @@ int main(int argc, char *argv[]) {
                     g_bDumpPacketEntities = true;
                 } else if (strcasecmp(&argv[i][1], "netmessages") == 0) {
                     g_bDumpNetMessages = true;
-                } else if (strcasecmp(&argv[i][1], "json") == 0) {
-                    g_bDumpJson = true;
-                } else if (strcasecmp(&argv[i][1], "pretty") == 0) {
-                    g_bPrettyJson = true;
-                } else if (strcasecmp(&argv[i][1], "hsbox") == 0) {
-                    g_bDumpJson = g_bDumpGameEvents = g_bOnlyHsBoxEvents = true;
                 }
             } else {
                 nFileArgument = i;

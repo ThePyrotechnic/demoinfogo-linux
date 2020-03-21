@@ -27,7 +27,6 @@
 #include <string>
 #include <set>
 #include <unordered_map>
-#include <json_spirit_writer.h>
 #include "demofile.h"
 #include "demofiledump.h"
 #include "demofilepropdecode.h"
@@ -38,6 +37,7 @@
 #include "google/protobuf/descriptor.pb.h"
 #include "cstrike15_usermessages.pb.h"
 #include "netmessages.pb.h"
+
 #if defined(_WIN32) || defined(_WIN64)
 #include <io.h>
 #include <fcntl.h>
@@ -46,7 +46,9 @@
 #include <locale>
 #include <codecvt>
 #else
+
 #include "utf8.h"
+
 #endif
 
 // file globals
@@ -62,14 +64,13 @@ static std::vector<player_info_t> s_PlayerInfos;
 static std::map<int, player_info_t> userid_info;
 // map xuid to player slot
 static std::map<uint64, int> player_slot;
-enum { DT_CSPlayer = 0, DT_CSGameRulesProxy = 1, DT_CSTeam = 2 };
+enum {
+    DT_CSPlayer = 0, DT_CSGameRulesProxy = 1, DT_CSTeam = 2
+};
 std::set<int> playerEntityProperties;
 int serverClassesIds[3];
 
-extern bool g_bDumpJson;
-extern bool g_bPrettyJson;
 extern bool g_bDumpGameEvents;
-extern bool g_bOnlyHsBoxEvents;
 extern bool g_bSupressFootstepEvents;
 extern bool g_bShowExtraPlayerInfoInGameEvents;
 extern bool g_bDumpDeaths;
@@ -81,10 +82,11 @@ extern bool g_bDumpNetMessages;
 
 static bool s_bMatchStartOccured = false;
 static int s_nCurrentTick;
-json_spirit::wmObject player_names;
 
 EntityEntry *FindEntity(int nEntity);
+
 player_info_t *FindPlayerByEntity(int entityID);
+
 player_info_t *FindPlayerInfo(int userId);
 
 std::wstring toWide(const std::string &s) {
@@ -104,7 +106,6 @@ std::wstring toWide(const std::string &s) {
 void addUserId(const player_info_t &playerInfo) {
     userid_info[playerInfo.userID] = playerInfo;
     if (!playerInfo.fakeplayer && !playerInfo.ishltv) {
-        player_names[std::to_wstring(playerInfo.xuid)] = toWide(playerInfo.name);
         player_slot[playerInfo.xuid] = playerInfo.entityID;
     }
 }
@@ -113,9 +114,6 @@ uint64 guid2xuid(std::string guid) {
     return 2 * std::stoll(guid.substr(10)) + 76561197960265728LL + (guid[8] == '1');
 }
 
-json_spirit::wmArray events;
-json_spirit::wmObject match;
-json_spirit::wmObject mm_rank_update;
 std::pair<int, int> score_snapshot;
 
 struct Team {
@@ -123,83 +121,8 @@ struct Team {
 };
 
 std::unordered_map<int, int> id2teamno;
-Team teams[4];
 double tick_rate = -1;
-std::map<uint64_t, int> jumped_last;
-std::map<uint64_t, int> scoped_since;
-const double jump_duration = 0.75; // seconds
-const double smoke_radius = 140;
-const double player_height = 72;
-const double player_crouch_height = 50;
-const double smoke_height = 130;
-std::map<uint64_t, int> bot_takeover;
-// Map entityid to Point
-std::map<int, Point> smokes;
-
-json_spirit::wmArray point_to_json(const Point &p) {
-    return json_spirit::wmArray({int(p.x), int(p.y), int(p.z)});
-}
-
-void addSmokes(Point p1, Point p2, json_spirit::wmObject &event) {
-    json_spirit::wmArray tmp;
-    for (auto &kv : smokes) {
-        Point killer(p1.x, p1.y, p1.z + player_crouch_height);
-        // Check if shooting to the legs AND head of the victim goes through smoke
-        if (intersects(killer, p2, kv.second, smoke_radius, smoke_height) &&
-            intersects(killer, Point(p2.x, p2.y, p2.z + player_height), kv.second, smoke_radius,
-                       smoke_height)) {
-            tmp.push_back(point_to_json(kv.second));
-        }
-    }
-    if (!tmp.empty())
-        event[L"smoke"] = tmp;
-}
-
-static std::set<std::wstring> hsbox_events = {L"player_death",
-                                              L"round_start",
-                                              L"round_end",
-                                              L"player_spawn",
-                                              L"game_restart",
-                                              L"score_changed",
-                                              L"player_hurt",
-                                              L"bomb_defused",
-                                              L"bomb_exploded",
-                                              L"player_disconnected",
-                                              L"round_officially_ended"};
-
-void addEvent(const std::map<std::wstring, json_spirit::wmConfig::Value_type> &object_) {
-    std::map<std::wstring, json_spirit::wmConfig::Value_type> object = object_;
-    if (g_bOnlyHsBoxEvents) {
-        std::wstring type = object.at(L"type").get_str();
-        // Save score snapshot for later when we check if we're switching sides
-        if (type == L"round_start") {
-            score_snapshot = std::make_pair(teams[2].total_score, teams[3].total_score);
-            bot_takeover.clear();
-            smokes.clear();
-            scoped_since.clear();
-        } else if (type == L"player_jump") {
-            jumped_last[object.at(L"userid").get_int64()] = s_nCurrentTick;
-        } else if (type == L"player_death") {
-            uint64 attackerid = object.at(L"attacker").get_int64();
-            if (tick_rate > 0 && jumped_last.count(attackerid) &&
-                jumped_last[attackerid] >= s_nCurrentTick - jump_duration / tick_rate) {
-                object[L"jump"] = s_nCurrentTick - jumped_last[attackerid];
-            }
-        } else if (type == L"bot_takeover") {
-            uint64 human = object.at(L"userid").get_int64();
-            int bot = object.at(L"botid").get_int();
-            bot_takeover[human] = bot;
-        } else if (type == L"smokegrenade_detonate") {
-            smokes[object.at(L"entityid").get_int()] = Point(
-                object.at(L"x").get_real(), object.at(L"y").get_real(), object.at(L"z").get_real());
-        } else if (type == L"smokegrenade_expired") {
-            smokes.erase(object.at(L"entityid").get_int());
-        }
-    }
-    if (!g_bOnlyHsBoxEvents ||
-        (g_bOnlyHsBoxEvents && hsbox_events.count(object.at(L"type").get_str())))
-        events.push_back(object);
-}
+Team teams[4];
 
 uint64 getXuid(int userid) {
     player_info_t *pPlayerInfo = FindPlayerInfo(userid);
@@ -231,7 +154,7 @@ bool CDemoFileDump::Open(const char *filename) {
 }
 
 void CDemoFileDump::MsgPrintf(const ::google::protobuf::Message &msg, int size) {
-    if (g_bDumpNetMessages && !g_bDumpJson) {
+    if (g_bDumpNetMessages) {
         const std::string &TypeName = msg.GetTypeName();
 
         // Print the message type and size
@@ -240,7 +163,7 @@ void CDemoFileDump::MsgPrintf(const ::google::protobuf::Message &msg, int size) 
     }
 }
 
-template <class T, int msgType>
+template<class T, int msgType>
 void PrintUserMessage(CDemoFileDump &Demo, const void *parseBuffer, int BufferSize) {
     T msg;
 
@@ -249,32 +172,13 @@ void PrintUserMessage(CDemoFileDump &Demo, const void *parseBuffer, int BufferSi
     }
 }
 
-template <>
+template<>
 void PrintUserMessage<CCSUsrMsg_ServerRankUpdate, CS_UM_ServerRankUpdate>(CDemoFileDump &Demo,
                                                                           const void *parseBuffer,
                                                                           int BufferSize) {
     CCSUsrMsg_ServerRankUpdate msg;
     if (msg.ParseFromArray(parseBuffer, BufferSize)) {
-        if (g_bDumpJson) {
-            if (g_bOnlyHsBoxEvents) {
-                for (int i = 0; i < msg.rank_update_size(); ++i) {
-                    const auto &ru = msg.rank_update(i);
-                    uint64 xuid = 76561197960265728LL + ru.account_id();
-                    json_spirit::wmObject tmp;
-                    if (ru.has_num_wins())
-                        tmp[L"num_wins"] = ru.num_wins();
-                    if (ru.has_rank_old())
-                        tmp[L"rank_old"] = ru.rank_old();
-                    if (ru.has_rank_new())
-                        tmp[L"rank_new"] = ru.rank_new();
-                    if (ru.has_rank_change())
-                        tmp[L"rank_change"] = ru.rank_change();
-                    mm_rank_update[std::to_wstring(xuid)] = tmp;
-                }
-            }
-        } else
-            Demo.MsgPrintf(msg, BufferSize);
-    } else {
+        Demo.MsgPrintf(msg, BufferSize);
     }
 }
 
@@ -291,9 +195,9 @@ void CDemoFileDump::DumpUserMessage(const void *parseBuffer, int BufferSize) {
         PrintUserMessage<CCSUsrMsg_##_x, CS_UM_##_x>(*this, parseBufferUM, SizeUM);                \
         break
 
-        default:
-            // unknown user message
-            break;
+            default:
+                // unknown user message
+                break;
             HANDLE_UserMsg(VGUIMenu);
             HANDLE_UserMsg(Geiger);
             HANDLE_UserMsg(Train);
@@ -350,7 +254,7 @@ void CDemoFileDump::DumpUserMessage(const void *parseBuffer, int BufferSize) {
     }
 }
 
-template <class T, int msgType>
+template<class T, int msgType>
 void PrintNetMessage(CDemoFileDump &Demo, const void *parseBuffer, int BufferSize) {
     T msg;
 
@@ -362,23 +266,17 @@ void PrintNetMessage(CDemoFileDump &Demo, const void *parseBuffer, int BufferSiz
     }
 }
 
-template <>
+template<>
 void PrintNetMessage<CSVCMsg_ServerInfo, svc_ServerInfo>(CDemoFileDump &Demo,
                                                          const void *parseBuffer,
                                                          int BufferSize) {
     CSVCMsg_ServerInfo serverInfo;
 
-    if (g_bDumpJson) {
-        if (serverInfo.ParseFromArray(parseBuffer, BufferSize) && serverInfo.has_map_name()) {
-            match[L"map"] = toWide(serverInfo.map_name());
-            match[L"tickrate"] = serverInfo.tick_interval();
-        }
-    } else
-        Demo.DumpUserMessage(parseBuffer, BufferSize);
+    Demo.DumpUserMessage(parseBuffer, BufferSize);
     tick_rate = serverInfo.tick_interval();
 }
 
-template <>
+template<>
 void PrintNetMessage<CSVCMsg_UserMessage, svc_UserMessage>(CDemoFileDump &Demo,
                                                            const void *parseBuffer,
                                                            int BufferSize) {
@@ -413,7 +311,7 @@ const CSVCMsg_GameEventList::descriptor_t *GetGameEventDescriptor(const CSVCMsg_
 
     for (iDescriptor = 0; iDescriptor < Demo.m_GameEventList.descriptors().size(); iDescriptor++) {
         const CSVCMsg_GameEventList::descriptor_t &Descriptor =
-            Demo.m_GameEventList.descriptors(iDescriptor);
+                Demo.m_GameEventList.descriptors(iDescriptor);
 
         if (Descriptor.eventid() == msg.eventid())
             break;
@@ -421,8 +319,7 @@ const CSVCMsg_GameEventList::descriptor_t *GetGameEventDescriptor(const CSVCMsg_
 
     if (iDescriptor == Demo.m_GameEventList.descriptors().size()) {
         if (g_bDumpGameEvents) {
-            if (!g_bDumpJson)
-                printf("%s", msg.DebugString().c_str());
+            printf("%s", msg.DebugString().c_str());
         }
         return NULL;
     }
@@ -463,26 +360,17 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
                 reason = KeyValue.val_string().c_str();
             }
         }
-        if (!g_bDumpJson)
-            printf("userid %d index %d\n", userid, index);
+        printf("userid %d index %d\n", userid, index);
 
         if (bPlayerDisconnect) {
             if (g_bDumpGameEvents) {
-                if (g_bDumpJson)
-                    addEvent({{L"type", L"player_disconnected"},
-                              {L"name", toWide(name)},
-                              {L"tick", s_nCurrentTick},
-                              {L"reason", toWide(reason)},
-                              {L"userid", getXuid(userid)}});
-                else
-                    printf("Player %s (id:%d) disconnected. reason:%s\n", name, userid, reason);
+                printf("Player %s (id:%d) disconnected. reason:%s\n", name, userid, reason);
             }
             // mark the player info slot as disconnected
             player_info_t *pPlayerInfo = FindPlayerInfo(userid);
             if (pPlayerInfo) {
-                if (!g_bDumpJson)
-                    printf("Mark Player %s %s (id:%d) as disconnected\n", pPlayerInfo->name,
-                           pPlayerInfo->guid, pPlayerInfo->userID);
+                printf("Mark Player %s %s (id:%d) as disconnected\n", pPlayerInfo->name,
+                       pPlayerInfo->guid, pPlayerInfo->userID);
                 strcpy(pPlayerInfo->name, "disconnected");
                 pPlayerInfo->userID = -1;
                 pPlayerInfo->guid[0] = 0;
@@ -507,21 +395,13 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
             // add entity if it doesn't exist, update if it does
             if (!existing) {
                 if (g_bDumpGameEvents) {
-                    if (g_bDumpJson)
-                        addEvent({{L"type", L"connect"},
-                                  {L"name", toWide(name)},
-                                  {L"steamid", toWide(newPlayer.guid)},
-                                  {L"userid", userid}});
-                    else
-                        printf("Player %s %s (id:%d) connected.\n", newPlayer.guid, name, userid);
+                    printf("Player %s %s (id:%d) connected.\n", newPlayer.guid, name, userid);
                 }
                 s_PlayerInfos.push_back(newPlayer);
             } else {
-                if (!g_bDumpJson) {
-                    printf("Player %s %s %" PRIu64 " (id:%d) replaced with Player %s %s %" PRIu64 " (id:%d).\n",
-                           existing->guid, existing->name, existing->xuid, existing->userID,
-                           newPlayer.guid, newPlayer.name, newPlayer.xuid, newPlayer.userID);
-                }
+                printf("Player %s %s %" PRIu64 " (id:%d) replaced with Player %s %s %" PRIu64 " (id:%d).\n",
+                       existing->guid, existing->name, existing->xuid, existing->userID,
+                       newPlayer.guid, newPlayer.name, newPlayer.xuid, newPlayer.userID);
                 *existing = newPlayer;
             }
         }
@@ -530,26 +410,7 @@ bool HandlePlayerConnectDisconnectEvents(const CSVCMsg_GameEvent &msg,
     return false;
 }
 
-bool getPlayerPosition(int userid, Point &p) {
-    player_info_t *pInfo = FindPlayerInfo(userid);
-    if (!pInfo)
-        return false;
-    EntityEntry *pEntity = FindEntity(pInfo->entityID + 1);
-    if (pEntity) {
-        PropEntry *pXYProp = pEntity->FindProp("m_vecOrigin");
-        PropEntry *pZProp = pEntity->FindProp("m_vecOrigin[2]");
-        if (pXYProp && pZProp) {
-            p = Point(pXYProp->m_pPropValue->m_value.m_vector.x,
-                      pXYProp->m_pPropValue->m_value.m_vector.y,
-                      pZProp->m_pPropValue->m_value.m_float);
-            return true;
-        }
-    }
-    return false;
-}
-
-bool ShowPlayerInfo(json_spirit::wmObject &event,
-                    const char *pField,
+bool ShowPlayerInfo(const char *pField,
                     int nIndex,
                     bool bShowDetails = true,
                     bool bCSV = false) {
@@ -558,25 +419,7 @@ bool ShowPlayerInfo(json_spirit::wmObject &event,
         if (bCSV) {
             printf("%s, %s, %d", pField, pPlayerInfo->name, nIndex);
         } else {
-            if (g_bDumpJson) {
-                std::wstring field = toWide(pField);
-                if (pPlayerInfo->fakeplayer)
-                    event[field] = nIndex;
-                else {
-                    event[field] = pPlayerInfo->xuid;
-                    std::wstring type = event[L"type"].get_str();
-                    // Ignore player_spawn as this happens before round_start (where we clear the
-                    // bot_takeover map)
-                    // Also ignore player_death's assister field as csgo does the same
-                    // (resulting in awarding assists to the controlling human instead of the bot)
-                    if (bot_takeover.count(pPlayerInfo->xuid) && type != L"bot_takeover" &&
-                        type != L"player_spawn" &&
-                        (type != L"player_death" ||
-                         (type == L"player_death" && field != L"assister")))
-                        event[field] = bot_takeover[pPlayerInfo->xuid];
-                }
-            } else
-                printf(" %s: %s %" PRIu64 " (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid, nIndex);
+            printf(" %s: %s %" PRIu64 " (id:%d)\n", pField, pPlayerInfo->name, pPlayerInfo->xuid, nIndex);
         }
 
         if (bShowDetails) {
@@ -622,14 +465,13 @@ bool ShowPlayerInfo(json_spirit::wmObject &event,
         }
         return true;
     }
-    if (!g_bDumpJson)
-        printf("Cannot find player %d info.\n", nIndex);
+    printf("Cannot find player %d info.\n", nIndex);
     return false;
 }
 
-void HandlePlayerDeath(json_spirit::wmObject &event,
-                       const CSVCMsg_GameEvent &msg,
-                       const CSVCMsg_GameEventList::descriptor_t *pDescriptor) {
+void HandlePlayerDeath(
+        const CSVCMsg_GameEvent &msg,
+        const CSVCMsg_GameEventList::descriptor_t *pDescriptor) {
     int numKeys = msg.keys().size();
 
     int userid = -1;
@@ -654,48 +496,20 @@ void HandlePlayerDeath(json_spirit::wmObject &event,
         }
     }
 
-    ShowPlayerInfo(event, "victim", userid, true, true);
-    if (!g_bDumpJson)
-        printf(", ");
-    ShowPlayerInfo(event, "attacker", attackerid, true, true);
-    if (!g_bDumpJson)
-        printf(", %s, %s", pWeaponName, bHeadshot ? "true" : "false");
+    ShowPlayerInfo("victim", userid, true, true);
+    printf(", ");
+    ShowPlayerInfo("attacker", attackerid, true, true);
+    printf(", %s, %s", pWeaponName, bHeadshot ? "true" : "false");
     if (assisterid != 0) {
-        if (!g_bDumpJson)
-            printf(", ");
-        ShowPlayerInfo(event, "assister", assisterid, true, true);
+        printf(", ");
+        ShowPlayerInfo("assister", assisterid, true, true);
     }
-    if (!g_bDumpJson)
-        printf("\n");
+    printf("\n");
 }
 
-template <typename T>
-void addProperty(json_spirit::wmObject &event, const std::string &key, const T &value) {
-    if (g_bDumpJson)
-        event[toWide(key)] = value;
-    else
-        std::wcout << value << " ";
-}
-
-void addPropFloat(EntityEntry *pEntity,
-                  std::string name,
-                  std::wstring key,
-                  json_spirit::wmObject &event) {
-    PropEntry *prop = pEntity->FindProp(name.c_str());
-    if (prop)
-        event[key] = prop->m_pPropValue->m_value.m_float;
-}
-
-void addKillerProps(int killer, json_spirit::wmObject &event) {
-    player_info_t *pInfo = FindPlayerInfo(killer);
-    if (!pInfo)
-        return;
-    EntityEntry *pEntity = FindEntity(pInfo->entityID + 1);
-    if (!pEntity)
-        return;
-    addPropFloat(pEntity, "m_vecVelocity[2]", L"air_velocity", event);
-    if (scoped_since.count(pInfo->xuid))
-        event[L"scoped_since"] = scoped_since[pInfo->xuid];
+template<typename T>
+void addProperty(const std::string &key, const T &value) {
+    std::wcout << value << " ";
 }
 
 void ParseGameEvent(const CSVCMsg_GameEvent &msg,
@@ -707,19 +521,14 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                     s_bMatchStartOccured = true;
                 }
 
-                json_spirit::wmObject event;
                 bool bAllowDeathReport = !g_bSupressWarmupDeaths || s_bMatchStartOccured;
                 if (pDescriptor->name().compare("player_death") == 0 && g_bDumpDeaths &&
                     bAllowDeathReport) {
-                    HandlePlayerDeath(event, msg, pDescriptor);
+                    HandlePlayerDeath(msg, pDescriptor);
                 }
 
                 if (g_bDumpGameEvents) {
-                    if (g_bDumpJson) {
-                        event[L"type"] = toWide(pDescriptor->name());
-                        event[L"tick"] = s_nCurrentTick;
-                    } else
-                        printf("%s\n{\n", pDescriptor->name().c_str());
+                    printf("%s\n{\n", pDescriptor->name().c_str());
                 }
                 int numKeys = msg.keys().size();
                 int killer = -1, dead = -1;
@@ -739,63 +548,47 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                                     killer = KeyValue.val_short();
                             }
                             bHandled =
-                                ShowPlayerInfo(event, Key.name().c_str(), KeyValue.val_short(),
-                                               g_bShowExtraPlayerInfoInGameEvents);
+                                    ShowPlayerInfo(Key.name().c_str(), KeyValue.val_short(),
+                                                   g_bShowExtraPlayerInfoInGameEvents);
                         }
                         if (!bHandled) {
-                            if (!g_bDumpJson)
-                                printf(" %s: ", Key.name().c_str());
+                            printf(" %s: ", Key.name().c_str());
 
                             if (KeyValue.has_val_string()) {
-                                addProperty(event, Key.name(), toWide(KeyValue.val_string()));
+                                addProperty(Key.name(), toWide(KeyValue.val_string()));
                             }
                             if (KeyValue.has_val_float()) {
-                                addProperty(event, Key.name(), KeyValue.val_float());
+                                addProperty(Key.name(), KeyValue.val_float());
                             }
                             if (KeyValue.has_val_long()) {
-                                addProperty(event, Key.name(), KeyValue.val_long());
+                                addProperty(Key.name(), KeyValue.val_long());
                             }
                             if (KeyValue.has_val_short()) {
-                                addProperty(event, Key.name(), KeyValue.val_short());
+                                addProperty(Key.name(), KeyValue.val_short());
                             }
                             if (KeyValue.has_val_byte()) {
-                                addProperty(event, Key.name(), KeyValue.val_byte());
+                                addProperty(Key.name(), KeyValue.val_byte());
                             }
                             if (KeyValue.has_val_bool()) {
-                                addProperty(event, Key.name(), KeyValue.val_bool());
+                                addProperty(Key.name(), KeyValue.val_bool());
                             }
                             if (KeyValue.has_val_uint64()) {
-                                addProperty(event, Key.name(), KeyValue.val_uint64());
+                                addProperty(Key.name(), KeyValue.val_uint64());
                             }
-                            if (!g_bDumpJson)
-                                printf("\n");
+                            printf("\n");
                         }
                     }
-                }
-                if (pDescriptor->name().compare("player_death") == 0) {
-                    Point killerp, deadp;
-                    if (killer != -1 && getPlayerPosition(dead, deadp) &&
-                        getPlayerPosition(killer, killerp)) {
-                        event[L"attacker_pos"] = point_to_json(killerp);
-                        event[L"victim_pos"] = point_to_json(deadp);
-                        addSmokes(killerp, deadp, event);
-                    }
-                    if (killer != -1)
-                        addKillerProps(killer, event);
                 }
 
                 if (g_bDumpGameEvents) {
-                    if (g_bDumpJson)
-                        addEvent(event);
-                    else
-                        printf("}\n");
+                    printf("}\n");
                 }
             }
         }
     }
 }
 
-template <>
+template<>
 void PrintNetMessage<CSVCMsg_GameEvent, svc_GameEvent>(CDemoFileDump &Demo,
                                                        const void *parseBuffer,
                                                        int BufferSize) {
@@ -809,11 +602,11 @@ void PrintNetMessage<CSVCMsg_GameEvent, svc_GameEvent>(CDemoFileDump &Demo,
     }
 }
 
-template <typename T>
+template<typename T>
 static void LowLevelByteSwap(T *output, const T *input) {
     T temp = *output;
     for (unsigned int i = 0; i < sizeof(T); i++) {
-        ((unsigned char *)&temp)[i] = ((unsigned char *)input)[sizeof(T) - (i + 1)];
+        ((unsigned char *) &temp)[i] = ((unsigned char *) input)[sizeof(T) - (i + 1)];
     }
     memcpy(output, &temp, sizeof(T));
 }
@@ -870,9 +663,10 @@ void ParseStringTableUpdate(CBitRead &buf,
 
             if (substringcheck) {
                 int index = buf.ReadUBitLong(5);
-                if ( size_t ( index ) >= history.size() ) {
-                    printf ( "ParseStringTableUpdate: Invalid index %d, expected < %u\n", index, ( unsigned ) history.size() );
-                    exit ( -1 );
+                if (size_t(index) >= history.size()) {
+                    printf("ParseStringTableUpdate: Invalid index %d, expected < %u\n", index,
+                           (unsigned) history.size());
+                    exit(-1);
                 }
                 int bytestocopy = buf.ReadUBitLong(SUBSTRING_BITS);
                 snprintf(entry, bytestocopy + 1, "%s", history[index].string);
@@ -917,7 +711,7 @@ void ParseStringTableUpdate(CBitRead &buf,
         }
 
         if (bIsUserInfo && pUserData != NULL) {
-            const player_info_t *pUnswappedPlayerInfo = (const player_info_t *)pUserData;
+            const player_info_t *pUnswappedPlayerInfo = (const player_info_t *) pUserData;
             player_info_t playerInfo = *pUnswappedPlayerInfo;
             playerInfo.entityID = entryIndex;
 
@@ -962,7 +756,7 @@ void ParseStringTableUpdate(CBitRead &buf,
     }
 }
 
-template <>
+template<>
 void PrintNetMessage<CSVCMsg_CreateStringTable, svc_CreateStringTable>(CDemoFileDump &Demo,
                                                                        const void *parseBuffer,
                                                                        int BufferSize) {
@@ -981,14 +775,14 @@ void PrintNetMessage<CSVCMsg_CreateStringTable, svc_CreateStringTable>(CDemoFile
         snprintf(s_StringTables[s_nNumStringTables].szName,
                  sizeof(s_StringTables[s_nNumStringTables].szName), "%s", msg.name().c_str());
         s_StringTables[s_nNumStringTables].nMaxEntries = msg.max_entries();
-        s_StringTables[ s_nNumStringTables ].nUserDataSize = msg.user_data_size();
-        s_StringTables[ s_nNumStringTables ].nUserDataSizeBits = msg.user_data_size_bits();
-        s_StringTables[ s_nNumStringTables ].nUserDataFixedSize = msg.user_data_fixed_size();
+        s_StringTables[s_nNumStringTables].nUserDataSize = msg.user_data_size();
+        s_StringTables[s_nNumStringTables].nUserDataSizeBits = msg.user_data_size_bits();
+        s_StringTables[s_nNumStringTables].nUserDataFixedSize = msg.user_data_fixed_size();
         s_nNumStringTables++;
     }
 }
 
-template <>
+template<>
 void PrintNetMessage<CSVCMsg_UpdateStringTable, svc_UpdateStringTable>(CDemoFileDump &Demo,
                                                                        const void *parseBuffer,
                                                                        int BufferSize) {
@@ -997,13 +791,15 @@ void PrintNetMessage<CSVCMsg_UpdateStringTable, svc_UpdateStringTable>(CDemoFile
     if (msg.ParseFromArray(parseBuffer, BufferSize)) {
         CBitRead data(&msg.string_data()[0], msg.string_data().size());
 
-        if (msg.table_id() < s_nNumStringTables && s_StringTables[msg.table_id()].nMaxEntries > msg.num_changed_entries()) {
-            const StringTableData_t &table = s_StringTables[ msg.table_id() ];
-            bool bIsUserInfo = !strcmp ( table.szName, "userinfo" );
-            if ( g_bDumpStringTables ) {
-                printf ( "UpdateStringTable:%d(%s):%d:\n", msg.table_id(), table.szName, msg.num_changed_entries() );
+        if (msg.table_id() < s_nNumStringTables &&
+            s_StringTables[msg.table_id()].nMaxEntries > msg.num_changed_entries()) {
+            const StringTableData_t &table = s_StringTables[msg.table_id()];
+            bool bIsUserInfo = !strcmp(table.szName, "userinfo");
+            if (g_bDumpStringTables) {
+                printf("UpdateStringTable:%d(%s):%d:\n", msg.table_id(), table.szName, msg.num_changed_entries());
             }
-            ParseStringTableUpdate ( data, msg.num_changed_entries(), table.nMaxEntries, table.nUserDataSize, table.nUserDataSizeBits, table.nUserDataFixedSize, bIsUserInfo );
+            ParseStringTableUpdate(data, msg.num_changed_entries(), table.nMaxEntries, table.nUserDataSize,
+                                   table.nUserDataSizeBits, table.nUserDataFixedSize, bIsUserInfo);
         } else {
             printf("Bad UpdateStringTable:%d:%d!\n", msg.table_id(), msg.num_changed_entries());
         }
@@ -1034,7 +830,7 @@ void RecvTable_ReadInfos(const CSVCMsg_SendTable &msg) {
     }
 }
 
-template <>
+template<>
 void PrintNetMessage<CSVCMsg_SendTable, svc_SendTable>(CDemoFileDump &Demo,
                                                        const void *parseBuffer,
                                                        int BufferSize) {
@@ -1123,7 +919,7 @@ void GatherProps_IterateProps(CSVCMsg_SendTable *pTable,
         } else {
             if (sendProp.type() == DPT_Array) {
                 flattenedProps.push_back(
-                    FlattenedPropEntry(&sendProp, &(pTable->props(iProp - 1))));
+                        FlattenedPropEntry(&sendProp, &(pTable->props(iProp - 1))));
             } else {
                 flattenedProps.push_back(FlattenedPropEntry(&sendProp, NULL));
             }
@@ -1201,8 +997,8 @@ void FlattenDataTable(int nServerClass) {
     }
 
     std::set<std::string> interesting({
-        "m_vecOrigin", "m_vecOrigin[2]", "m_bIsScoped", "m_vecVelocity[2]",
-    });
+                                              "m_vecOrigin", "m_vecOrigin[2]", "m_bIsScoped", "m_vecVelocity[2]",
+                                      });
     if (nServerClass == serverClassesIds[DT_CSPlayer]) {
         for (size_t i = 0; i < flattenedProps.size(); ++i)
             if (interesting.count(flattenedProps[i].m_prop->var_name()))
@@ -1223,18 +1019,18 @@ int ReadFieldIndex(CBitRead &entityBitBuffer, int lastIndex, bool bNewWay) {
     } else {
         ret = entityBitBuffer.ReadUBitLong(7); // read 7 bits
         switch (ret & (32 | 64)) {
-        case 32:
-            ret = (ret & ~96) | (entityBitBuffer.ReadUBitLong(2) << 5);
-            assert(ret >= 32);
-            break;
-        case 64:
-            ret = (ret & ~96) | (entityBitBuffer.ReadUBitLong(4) << 5);
-            assert(ret >= 128);
-            break;
-        case 96:
-            ret = (ret & ~96) | (entityBitBuffer.ReadUBitLong(7) << 5);
-            assert(ret >= 512);
-            break;
+            case 32:
+                ret = (ret & ~96) | (entityBitBuffer.ReadUBitLong(2) << 5);
+                assert(ret >= 32);
+                break;
+            case 64:
+                ret = (ret & ~96) | (entityBitBuffer.ReadUBitLong(4) << 5);
+                assert(ret >= 128);
+                break;
+            case 96:
+                ret = (ret & ~96) | (entityBitBuffer.ReadUBitLong(7) << 5);
+                assert(ret >= 512);
+                break;
         }
     }
 
@@ -1270,14 +1066,6 @@ void handleTeamProp(uint32 entity_id, const std::string &key, const Prop_t &valu
 
     if (key != "m_scoreTotal")
         return;
-    bool changed = updateTeamScore(entity_id, value.m_value.m_int);
-    if (changed) {
-        if (g_bOnlyHsBoxEvents)
-            events.push_back(json_spirit::wmObject(
-                {{L"type", L"score_changed"},
-                 {L"tick", s_nCurrentTick},
-                 {L"score", json_spirit::wmArray({teams[2].total_score, teams[3].total_score})}}));
-    }
 }
 
 bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
@@ -1309,39 +1097,9 @@ bool ReadNewEntity(CBitRead &entityBitBuffer, EntityEntry *pEntity) {
     for (unsigned int i = 0; i < fieldIndices.size(); i++) {
         FlattenedPropEntry *pSendProp = GetSendPropByIndex(pEntity->m_uClass, fieldIndices[i]);
         if (pSendProp) {
-            // for -hsbox update only the entities and properties we need
-            if (g_bOnlyHsBoxEvents) {
-                bool team = pEntity->m_uClass == serverClassesIds[DT_CSTeam];
-                bool gamerules = pEntity->m_uClass == serverClassesIds[DT_CSGameRulesProxy];
-                bool player = pEntity->m_uClass == serverClassesIds[DT_CSPlayer];
-                if (team || gamerules ||
-                    (player && playerEntityProperties.count(fieldIndices[i]))) {
-                    Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
-                                               fieldIndices[i], !g_bDumpPacketEntities);
-                    pEntity->AddOrUpdateProp(pSendProp, pProp);
-                    if (team) {
-                        handleTeamProp(pEntity->m_uSerialNum, pSendProp->m_prop->var_name(),
-                                       *pProp);
-                    } else if (gamerules && pSendProp->m_prop->var_name() == "m_bGameRestart" &&
-                               pProp->m_value.m_int) {
-                        addEvent({{L"type", L"game_restart"}, {L"tick", s_nCurrentTick}});
-                    } else if (player && pSendProp->m_prop->var_name() == "m_bIsScoped") {
-                        player_info_t *playerInfo = FindPlayerByEntity(pEntity->m_nEntity - 1);
-                        if (playerInfo) {
-                            if (pProp->m_value.m_int)
-                                scoped_since[playerInfo->xuid] = s_nCurrentTick;
-                            else
-                                scoped_since.erase(playerInfo->xuid);
-                        }
-                    }
-                } else
-                    DecodePropFake(entityBitBuffer, pSendProp, pEntity->m_uClass, fieldIndices[i],
-                                   !g_bDumpPacketEntities);
-            } else {
-                Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
-                                           fieldIndices[i], !g_bDumpPacketEntities);
-                pEntity->AddOrUpdateProp(pSendProp, pProp);
-            }
+            Prop_t *pProp = DecodeProp(entityBitBuffer, pSendProp, pEntity->m_uClass,
+                                       fieldIndices[i], !g_bDumpPacketEntities);
+            pEntity->AddOrUpdateProp(pSendProp, pProp);
         } else {
             return false;
         }
@@ -1385,7 +1143,7 @@ void RemoveEntity(int nEntity) {
     }
 }
 
-template <>
+template<>
 void PrintNetMessage<CSVCMsg_PacketEntities, svc_PacketEntities>(CDemoFileDump &Demo,
                                                                  const void *parseBuffer,
                                                                  int BufferSize) {
@@ -1443,77 +1201,81 @@ void PrintNetMessage<CSVCMsg_PacketEntities, svc_PacketEntities>(CDemoFileDump &
                 }
 
                 switch (updateType) {
-                case EnterPVS: {
-                    uint32 uClass = entityBitBuffer.ReadUBitLong(s_nServerClassBits);
-                    uint32 uSerialNum =
-                        entityBitBuffer.ReadUBitLong(NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS);
-                    if (g_bDumpPacketEntities) {
-                        printf("Entity Enters PVS: id:%d, class:%d, serial:%d\n", nNewEntity,
-                               uClass, uSerialNum);
-                    }
-                    EntityEntry *pEntity = AddEntity(nNewEntity, uClass, uSerialNum);
-                    if (!ReadNewEntity(entityBitBuffer, pEntity)) {
-                        fprintf(stderr,
-                                "*****Error reading entity! Bailing on this PacketEntities!\n");
-                        return;
-                    }
-                } break;
-
-                case LeavePVS: {
-                    if (!bAsDelta) // Should never happen on a full update.
-                    {
-                        printf("WARNING: LeavePVS on full update");
-                        updateType = Failed; // break out
-                        assert(0);
-                    } else {
+                    case EnterPVS: {
+                        uint32 uClass = entityBitBuffer.ReadUBitLong(s_nServerClassBits);
+                        uint32 uSerialNum =
+                                entityBitBuffer.ReadUBitLong(NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS);
                         if (g_bDumpPacketEntities) {
-                            if (UpdateFlags & FHDR_DELETE) {
-                                printf("Entity leaves PVS and is deleted: id:%d\n", nNewEntity);
-                            } else {
-                                printf("Entity leaves PVS: id:%d\n", nNewEntity);
-                            }
+                            printf("Entity Enters PVS: id:%d, class:%d, serial:%d\n", nNewEntity,
+                                   uClass, uSerialNum);
                         }
-                        RemoveEntity(nNewEntity);
-                    }
-                } break;
-
-                case DeltaEnt: {
-                    EntityEntry *pEntity = FindEntity(nNewEntity);
-                    if (pEntity) {
-                        if (g_bDumpPacketEntities) {
-                            printf("Entity Delta update: id:%d, class:%d, serial:%d\n",
-                                   pEntity->m_nEntity, pEntity->m_uClass, pEntity->m_uSerialNum);
-                        }
+                        EntityEntry *pEntity = AddEntity(nNewEntity, uClass, uSerialNum);
                         if (!ReadNewEntity(entityBitBuffer, pEntity)) {
                             fprintf(stderr,
                                     "*****Error reading entity! Bailing on this PacketEntities!\n");
                             return;
                         }
-                    } else {
-                        assert(0);
                     }
-                } break;
+                        break;
 
-                case PreserveEnt: {
-                    if (!bAsDelta) // Should never happen on a full update.
-                    {
-                        printf("WARNING: PreserveEnt on full update");
-                        updateType = Failed; // break out
-                        assert(0);
-                    } else {
-                        if (nNewEntity >= MAX_EDICTS) {
-                            printf("PreserveEnt: nNewEntity == MAX_EDICTS");
+                    case LeavePVS: {
+                        if (!bAsDelta) // Should never happen on a full update.
+                        {
+                            printf("WARNING: LeavePVS on full update");
+                            updateType = Failed; // break out
                             assert(0);
                         } else {
                             if (g_bDumpPacketEntities) {
-                                printf("PreserveEnt: id:%d\n", nNewEntity);
+                                if (UpdateFlags & FHDR_DELETE) {
+                                    printf("Entity leaves PVS and is deleted: id:%d\n", nNewEntity);
+                                } else {
+                                    printf("Entity leaves PVS: id:%d\n", nNewEntity);
+                                }
+                            }
+                            RemoveEntity(nNewEntity);
+                        }
+                    }
+                        break;
+
+                    case DeltaEnt: {
+                        EntityEntry *pEntity = FindEntity(nNewEntity);
+                        if (pEntity) {
+                            if (g_bDumpPacketEntities) {
+                                printf("Entity Delta update: id:%d, class:%d, serial:%d\n",
+                                       pEntity->m_nEntity, pEntity->m_uClass, pEntity->m_uSerialNum);
+                            }
+                            if (!ReadNewEntity(entityBitBuffer, pEntity)) {
+                                fprintf(stderr,
+                                        "*****Error reading entity! Bailing on this PacketEntities!\n");
+                                return;
+                            }
+                        } else {
+                            assert(0);
+                        }
+                    }
+                        break;
+
+                    case PreserveEnt: {
+                        if (!bAsDelta) // Should never happen on a full update.
+                        {
+                            printf("WARNING: PreserveEnt on full update");
+                            updateType = Failed; // break out
+                            assert(0);
+                        } else {
+                            if (nNewEntity >= MAX_EDICTS) {
+                                printf("PreserveEnt: nNewEntity == MAX_EDICTS");
+                                assert(0);
+                            } else {
+                                if (g_bDumpPacketEntities) {
+                                    printf("PreserveEnt: id:%d\n", nNewEntity);
+                                }
                             }
                         }
                     }
-                } break;
+                        break;
 
-                default:
-                    break;
+                    default:
+                        break;
                 }
             }
         }
@@ -1522,9 +1284,9 @@ void PrintNetMessage<CSVCMsg_PacketEntities, svc_PacketEntities>(CDemoFileDump &
 
 static std::string GetNetMsgName(int Cmd) {
     if (NET_Messages_IsValid(Cmd)) {
-        return NET_Messages_Name((NET_Messages)Cmd);
+        return NET_Messages_Name((NET_Messages) Cmd);
     } else if (SVC_Messages_IsValid(Cmd)) {
-        return SVC_Messages_Name((SVC_Messages)Cmd);
+        return SVC_Messages_Name((SVC_Messages) Cmd);
     }
 
     return "NETMSG_???";
@@ -1554,9 +1316,9 @@ void CDemoFileDump::DumpDemoPacket(CBitRead &buf, int length) {
             *this, buf.GetBasePointer() + buf.GetNumBytesRead(), Size);                            \
         break
 
-        default:
-            // unknown net message
-            break;
+            default:
+                // unknown net message
+                break;
 
             HANDLE_NetMsg(NOP);               // 0
             HANDLE_NetMsg(Disconnect);        // 1
@@ -1605,7 +1367,7 @@ void CDemoFileDump::HandleDemoPacket() {
     m_demofile.ReadSequenceInfo(dummy, dummy);
 
     CBitRead buf(data, NET_MAX_PAYLOAD);
-    int length = m_demofile.ReadRawData((char *)buf.GetBasePointer(), buf.GetNumBytesLeft());
+    int length = m_demofile.ReadRawData((char *) buf.GetBasePointer(), buf.GetNumBytesLeft());
     buf.Seek(0);
     DumpDemoPacket(buf, length);
 }
@@ -1688,14 +1450,6 @@ bool ParseDataTable(CBitRead &buf) {
                    entry.nDataTable);
         }
         s_ServerClasses.push_back(entry);
-        if (g_bOnlyHsBoxEvents) {
-            if (!strcmp(entry.strDTName, "DT_CSPlayer"))
-                serverClassesIds[DT_CSPlayer] = entry.nClassID;
-            else if (!strcmp(entry.strDTName, "DT_CSTeam"))
-                serverClassesIds[DT_CSTeam] = entry.nClassID;
-            else if (!strcmp(entry.strDTName, "DT_CSGameRulesProxy"))
-                serverClassesIds[DT_CSGameRulesProxy] = entry.nClassID;
-        }
     }
 
     if (g_bDumpDataTables) {
@@ -1740,7 +1494,7 @@ bool DumpStringTable(CBitRead &buf, bool bIsUserInfo) {
         assert(strlen(stringname) < 100);
 
         if (buf.ReadOneBit() == 1) {
-            int userDataSize = (int)buf.ReadWord();
+            int userDataSize = (int) buf.ReadWord();
             assert(userDataSize > 0);
             unsigned char *data = new unsigned char[userDataSize + 4];
             assert(data);
@@ -1748,7 +1502,7 @@ bool DumpStringTable(CBitRead &buf, bool bIsUserInfo) {
             buf.ReadBytes(data, userDataSize);
 
             if (bIsUserInfo && data != NULL) {
-                const player_info_t *pUnswappedPlayerInfo = (const player_info_t *)data;
+                const player_info_t *pUnswappedPlayerInfo = (const player_info_t *) data;
                 player_info_t playerInfo = *pUnswappedPlayerInfo;
                 playerInfo.entityID = i;
 
@@ -1799,7 +1553,7 @@ bool DumpStringTable(CBitRead &buf, bool bIsUserInfo) {
             buf.ReadString(stringname, sizeof(stringname));
 
             if (buf.ReadOneBit() == 1) {
-                int userDataSize = (int)buf.ReadWord();
+                int userDataSize = (int) buf.ReadWord();
                 assert(userDataSize > 0);
                 unsigned char *data = new unsigned char[userDataSize + 4];
                 assert(data);
@@ -1858,76 +1612,57 @@ void CDemoFileDump::DoDump() {
         s_nCurrentTick = tick;
         // COMMAND HANDLERS
         switch (cmd) {
-        case dem_synctick:
-            break;
+            case dem_synctick:
+                break;
 
-        case dem_stop: {
-            demofinished = true;
-        } break;
-
-        case dem_consolecmd: {
-            m_demofile.ReadRawData(NULL, 0);
-        } break;
-
-        case dem_datatables: {
-            char *data = (char *)malloc(DEMO_RECORD_BUFFER_SIZE);
-            CBitRead buf(data, DEMO_RECORD_BUFFER_SIZE);
-            m_demofile.ReadRawData((char *)buf.GetBasePointer(), buf.GetNumBytesLeft());
-            buf.Seek(0);
-            if (!ParseDataTable(buf)) {
-                printf("Error parsing data tables. \n");
+            case dem_stop: {
+                demofinished = true;
             }
-            free(data);
-        } break;
+                break;
 
-        case dem_stringtables: {
-            char *data = (char *)malloc(DEMO_RECORD_BUFFER_SIZE);
-            CBitRead buf(data, DEMO_RECORD_BUFFER_SIZE);
-            m_demofile.ReadRawData((char *)buf.GetBasePointer(), buf.GetNumBytesLeft());
-            buf.Seek(0);
-            if (!DumpStringTables(buf)) {
-                printf("Error parsing string tables. \n");
+            case dem_consolecmd: {
+                m_demofile.ReadRawData(NULL, 0);
             }
-            free(data);
-        } break;
+                break;
 
-        case dem_usercmd: {
-            int dummy;
-            m_demofile.ReadUserCmd(NULL, dummy);
-        } break;
+            case dem_datatables: {
+                char *data = (char *) malloc(DEMO_RECORD_BUFFER_SIZE);
+                CBitRead buf(data, DEMO_RECORD_BUFFER_SIZE);
+                m_demofile.ReadRawData((char *) buf.GetBasePointer(), buf.GetNumBytesLeft());
+                buf.Seek(0);
+                if (!ParseDataTable(buf)) {
+                    printf("Error parsing data tables. \n");
+                }
+                free(data);
+            }
+                break;
 
-        case dem_signon:
-        case dem_packet: {
-            HandleDemoPacket();
-        } break;
+            case dem_stringtables: {
+                char *data = (char *) malloc(DEMO_RECORD_BUFFER_SIZE);
+                CBitRead buf(data, DEMO_RECORD_BUFFER_SIZE);
+                m_demofile.ReadRawData((char *) buf.GetBasePointer(), buf.GetNumBytesLeft());
+                buf.Seek(0);
+                if (!DumpStringTables(buf)) {
+                    printf("Error parsing string tables. \n");
+                }
+                free(data);
+            }
+                break;
 
-        default:
-            break;
+            case dem_usercmd: {
+                int dummy;
+                m_demofile.ReadUserCmd(NULL, dummy);
+            }
+                break;
+
+            case dem_signon:
+            case dem_packet: {
+                HandleDemoPacket();
+            }
+                break;
+
+            default:
+                break;
         }
-    }
-    if (g_bDumpJson) {
-        match[L"events"] = events;
-        match[L"servername"] = toWide(m_demofile.m_DemoHeader.servername);
-        match[L"player_names"] = player_names;
-        json_spirit::wmArray gotv_bots;
-        for (const auto &kv : userid_info)
-            if (kv.second.ishltv)
-                gotv_bots.push_back(toWide(kv.second.name));
-        match[L"gotv_bots"] = gotv_bots;
-        if (!mm_rank_update.empty())
-            match[L"mm_rank_update"] = mm_rank_update;
-
-        json_spirit::wmObject uids;
-        for (const auto &kv : player_slot)
-            uids[std::to_wstring(kv.first)] = kv.second;
-        match[L"player_slots"] = uids;
-
-        int options = 0;
-        if (g_bPrettyJson)
-            options = json_spirit::pretty_print | json_spirit::remove_trailing_zeros;
-#if defined(_WIN32) || defined(_WIN64)
-        _setmode(_fileno(stdout), _O_U8TEXT);
-#endif
-        json_spirit::write(match, std::wcout, options);
     }
 }
