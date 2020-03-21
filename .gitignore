@@ -3,10 +3,7 @@ demoinfogo
 build
 protobuf-2.5.0
 .idea
-3rdparty
 cmake-build-debug
-generated_proto
-*.o
 *.dem
 *.tar
 *.gz
