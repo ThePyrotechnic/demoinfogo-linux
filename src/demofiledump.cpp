@@ -121,6 +121,7 @@ struct Team {
 };
 
 std::unordered_map<int, int> id2teamno;
+double tick_rate = -1;
 Team teams[4];
 
 uint64 getXuid(int userid) {
