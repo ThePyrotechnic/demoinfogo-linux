@@ -1,8 +1,5 @@
 CS:GO Demos and Network Messages
 --------------------------------
-[![Build Status](https://travis-ci.org/bugdone/demoinfogo-linux.svg?branch=master)](https://travis-ci.org/bugdone/demoinfogo-linux) [![Build status](https://ci.appveyor.com/api/projects/status/exkuif8u7gc25ew2/branch/master?svg=true)](https://ci.appveyor.com/project/BugDone/demoinfogo-linux/branch/master)
-
-
 
 Demos and network messages in CS:GO use Google's Protocol Buffers (protobuf). Protobuf is a message/object serialization language that generates code to serialize the objects efficiently. For information about protobuf, see https://developers.google.com/protocol-buffers/docs/overview
 
@@ -14,15 +11,16 @@ The repo contains the source code required to build this tool on linux. The sour
 Building demoinfogo
 ------------------
 
-In order to build demoinfogo on Linux, follow these steps:
+In order to build demoinfogo on Gentoo, follow these steps:
 
-1. `sudo apt-get install cmake libprotobuf-dev protobuf-compiler libjson-spirit-dev`
+1. `sudo emerge --ask dev-util/cmake dev-libs/protobuf`
 2. `mkdir build`
 3. `cd build`
 4. `cmake ..`
 5. `make`
+6. Run `./demoinfogo` for help
 
-Replace step 4 with `cmake .. -DRPATH=ON` to force the generated executable to search for shared libraries in the `libs/` subdirectory first.
+The `demoinfogo` executable will be in the `build` directory
 
 
 Working with Network Messages
