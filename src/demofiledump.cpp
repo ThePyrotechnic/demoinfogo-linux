@@ -461,6 +461,14 @@ bool ShowPlayerInfo(const char *pField,
                                (pTeamProp->m_pPropValue->m_value.m_int == 2) ? "T" : "CT");
                     }
                 }
+                PropEntry *pAccountProp = pEntity->FindProp("m_iAccount");
+                if (pAccountProp) {
+                    if (bCSV) {
+                        printf(", %i", pAccountProp->m_pPropValue->m_value.m_int);
+                    } else {
+                        printf("  account: %i\n", pAccountProp->m_pPropValue->m_value.m_int);
+                    }
+                }
             }
         }
         return true;
@@ -581,6 +589,7 @@ void ParseGameEvent(const CSVCMsg_GameEvent &msg,
                 }
 
                 if (g_bDumpGameEvents) {
+                    printf(" tick: %i\n", s_nCurrentTick);
                     printf("}\n");
                 }
             }
